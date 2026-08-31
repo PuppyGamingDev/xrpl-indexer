@@ -1,5 +1,10 @@
 export interface ServerStats {
-  ledger: { latestSequence: number | null; closeTime: string | null; lagSeconds: number | null };
+  ledger: {
+    latestSequence: number | null;
+    firstSequence: number | null;
+    closeTime: string | null;
+    lagSeconds: number | null;
+  };
   tokens: { total: number; iou: number; mpt: number };
   nfts: { total: number; live: number; burned: number; withUri: number };
   collections: { total: number };

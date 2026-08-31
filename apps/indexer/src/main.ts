@@ -3,6 +3,7 @@ import { closeDb, getDb } from "@xrpl-indexer/db";
 import { config } from "./config.ts";
 import { runBackfill } from "./backfill.ts";
 import { startMetricsServer } from "./metrics.ts";
+import { isSnapshotDone, runSnapshot } from "./snapshot.ts";
 import { createSyncer } from "./sync.ts";
 
 const log = createLogger("indexer");
@@ -20,6 +21,21 @@ async function main(): Promise<void> {
     stopMetrics();
     await closeDb();
     return;
+  }
+
+  if (mode === "snapshot") {
+    await runSnapshot(db);
+    stopMetrics();
+    await closeDb();
+    return;
+  }
+
+  // Live mode: if a full initial state snapshot has never completed, run it
+  // first (resumable), then hand off to live sync which catches up from the
+  // checkpoint to current.
+  if (config.INDEXER_SNAPSHOT_ON_START && !(await isSnapshotDone(db))) {
+    log.info("initial state snapshot not complete — running it before live sync");
+    await runSnapshot(db);
   }
 
   const syncer = createSyncer(db);

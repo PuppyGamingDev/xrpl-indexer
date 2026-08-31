@@ -17,6 +17,13 @@ const {
 
 type Row<T extends { $inferInsert: unknown }> = T["$inferInsert"];
 
+/** ~3500 rows/insert keeps the widest table under Postgres's 65535-param cap. */
+async function chunked<T>(rows: T[], run: (chunk: T[]) => Promise<unknown>, size = 3500): Promise<void> {
+  for (let i = 0; i < rows.length; i += size) {
+    await run(rows.slice(i, i + size));
+  }
+}
+
 /**
  * Accumulates every mutation derived from one ledger, then writes them in a
  * single transaction. Within a ledger, later writes for the same key win.
@@ -40,9 +47,17 @@ export class LedgerBatch {
   /** The XRP token id — excluded from per-ledger holder/supply recompute (meaningless + huge). */
   private readonly xrpTokenId: number;
 
-  constructor(ledgerSeq: number, opts: { xrpTokenId: number }) {
+  /**
+   * Snapshot mode: never regress state that delta-processing already wrote
+   * (conflicts become DO NOTHING), and skip per-flush metric recompute — the
+   * snapshot does one bulk recompute at the end.
+   */
+  private readonly snapshot: boolean;
+
+  constructor(ledgerSeq: number, opts: { xrpTokenId: number; snapshot?: boolean }) {
     this.ledgerSeq = ledgerSeq;
     this.xrpTokenId = opts.xrpTokenId;
+    this.snapshot = opts.snapshot ?? false;
   }
 
   balance(accountId: number, tokenId: number, balance: string): void {
@@ -103,99 +118,92 @@ export class LedgerBatch {
     );
   }
 
-  /** Persist everything. Must run inside a transaction (`tx`). */
+  /** Persist everything. Must run inside a transaction (`tx`) for live use. */
   async flush(tx: Db): Promise<void> {
-    if (this.balances.size) {
-      await tx
-        .insert(accountBalance)
-        .values([...this.balances.values()])
-        .onConflictDoUpdate({
-          target: [accountBalance.accountId, accountBalance.tokenId, accountBalance.ledgerSeq],
-          set: { balance: sql`excluded.balance` },
-        });
-    }
+    const snap = this.snapshot;
+
+    await chunked([...this.balances.values()], async (rows) => {
+      const ins = tx.insert(accountBalance).values(rows);
+      await (snap
+        ? ins.onConflictDoNothing()
+        : ins.onConflictDoUpdate({
+            target: [accountBalance.accountId, accountBalance.tokenId, accountBalance.ledgerSeq],
+            set: { balance: sql`excluded.balance` },
+          }));
+    });
 
     for (const [accountId, patch] of this.accountPatches) {
       await tx.update(account).set(patch).where(sql`${account.id} = ${accountId}`);
     }
 
-    if (this.nftUpserts.size) {
-      await tx
-        .insert(nft)
-        .values([...this.nftUpserts.values()])
-        .onConflictDoUpdate({
-          target: nft.tokenId,
-          set: {
-            ownerId: sql`coalesce(excluded.owner_id, ${nft.ownerId})`,
-            burnLedgerSeq: sql`coalesce(excluded.burn_ledger_seq, ${nft.burnLedgerSeq})`,
-            // once burned, stays burned; a stub (excluded.live = true) never resurrects
-            live: sql`${nft.live} and excluded.live`,
-            uri: sql`coalesce(excluded.uri, ${nft.uri})`,
-            mintLedgerSeq: sql`coalesce(${nft.mintLedgerSeq}, excluded.mint_ledger_seq)`,
-            collectionId: sql`coalesce(excluded.collection_id, ${nft.collectionId})`,
-          },
-        });
-    }
+    await chunked([...this.nftUpserts.values()], async (rows) => {
+      const ins = tx.insert(nft).values(rows);
+      await (snap
+        ? ins.onConflictDoNothing()
+        : ins.onConflictDoUpdate({
+            target: nft.tokenId,
+            set: {
+              ownerId: sql`coalesce(excluded.owner_id, ${nft.ownerId})`,
+              burnLedgerSeq: sql`coalesce(excluded.burn_ledger_seq, ${nft.burnLedgerSeq})`,
+              live: sql`${nft.live} and excluded.live`,
+              uri: sql`coalesce(excluded.uri, ${nft.uri})`,
+              mintLedgerSeq: sql`coalesce(${nft.mintLedgerSeq}, excluded.mint_ledger_seq)`,
+              collectionId: sql`coalesce(excluded.collection_id, ${nft.collectionId})`,
+            },
+          }));
+    });
 
-    if (this.nftOffers.size) {
-      await tx
-        .insert(nftOffer)
-        .values([...this.nftOffers.values()])
-        .onConflictDoUpdate({
-          target: nftOffer.offerId,
-          set: { closedLedgerSeq: sql`coalesce(excluded.closed_ledger_seq, ${nftOffer.closedLedgerSeq})` },
-        });
-    }
+    await chunked([...this.nftOffers.values()], async (rows) => {
+      const ins = tx.insert(nftOffer).values(rows);
+      await (snap
+        ? ins.onConflictDoNothing()
+        : ins.onConflictDoUpdate({
+            target: nftOffer.offerId,
+            set: { closedLedgerSeq: sql`coalesce(excluded.closed_ledger_seq, ${nftOffer.closedLedgerSeq})` },
+          }));
+    });
 
-    if (this.nftExchanges.length) {
-      await tx.insert(nftExchange).values(this.nftExchanges).onConflictDoNothing();
-    }
+    await chunked(this.nftExchanges, (rows) => tx.insert(nftExchange).values(rows).onConflictDoNothing());
+    await chunked(this.tokenExchanges, (rows) => tx.insert(tokenExchange).values(rows).onConflictDoNothing());
 
-    if (this.tokenExchanges.length) {
-      await tx.insert(tokenExchange).values(this.tokenExchanges).onConflictDoNothing();
-    }
+    await chunked([...this.amms.values()], async (rows) => {
+      const ins = tx.insert(amm).values(rows);
+      await (snap
+        ? ins.onConflictDoNothing()
+        : ins.onConflictDoUpdate({ target: amm.accountId, set: { tradingFee: sql`excluded.trading_fee` } }));
+    });
 
-    if (this.amms.size) {
-      await tx
-        .insert(amm)
-        .values([...this.amms.values()])
-        .onConflictDoUpdate({
-          target: amm.accountId,
-          set: { tradingFee: sql`excluded.trading_fee` },
-        });
-    }
+    await chunked([...this.vaults.values()], async (rows) => {
+      const ins = tx.insert(vault).values(rows);
+      await (snap
+        ? ins.onConflictDoNothing()
+        : ins.onConflictDoUpdate({
+            target: vault.vaultId,
+            set: {
+              assetsTotal: sql`excluded.assets_total`,
+              assetsAvailable: sql`excluded.assets_available`,
+              assetsMaximum: sql`excluded.assets_maximum`,
+              flags: sql`excluded.flags`,
+              ledgerSeq: sql`excluded.ledger_seq`,
+            },
+          }));
+    });
 
-    if (this.vaults.size) {
-      await tx
-        .insert(vault)
-        .values([...this.vaults.values()])
-        .onConflictDoUpdate({
-          target: vault.vaultId,
-          set: {
-            assetsTotal: sql`excluded.assets_total`,
-            assetsAvailable: sql`excluded.assets_available`,
-            assetsMaximum: sql`excluded.assets_maximum`,
-            flags: sql`excluded.flags`,
-            ledgerSeq: sql`excluded.ledger_seq`,
-          },
-        });
-    }
+    await chunked([...this.oracles.values()], async (rows) => {
+      const ins = tx.insert(oracle).values(rows);
+      await (snap
+        ? ins.onConflictDoNothing()
+        : ins.onConflictDoUpdate({
+            target: oracle.oracleId,
+            set: {
+              lastUpdateTime: sql`excluded.last_update_time`,
+              priceDataCount: sql`excluded.price_data_count`,
+              ledgerSeq: sql`excluded.ledger_seq`,
+            },
+          }));
+    });
 
-    if (this.oracles.size) {
-      await tx
-        .insert(oracle)
-        .values([...this.oracles.values()])
-        .onConflictDoUpdate({
-          target: oracle.oracleId,
-          set: {
-            lastUpdateTime: sql`excluded.last_update_time`,
-            priceDataCount: sql`excluded.price_data_count`,
-            ledgerSeq: sql`excluded.ledger_seq`,
-          },
-        });
-    }
-
-    await this.writeMetricPoints(tx);
+    if (!snap) await this.writeMetricPoints(tx);
   }
 
   /**

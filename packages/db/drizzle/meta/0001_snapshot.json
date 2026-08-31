@@ -1,0 +1,2612 @@
+{
+  "id": "178e21c8-5278-42b1-97aa-d0b212f23547",
+  "prevId": "7b0ccaff-191d-406c-9a2e-5278c94b622b",
+  "version": "7",
+  "dialect": "postgresql",
+  "tables": {
+    "public.indexer_checkpoint": {
+      "name": "indexer_checkpoint",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "default": 1
+        },
+        "last_ledger_seq": {
+          "name": "last_ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_ledger_hash": {
+          "name": "last_ledger_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ledger": {
+      "name": "ledger",
+      "schema": "",
+      "columns": {
+        "sequence": {
+          "name": "sequence",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "hash": {
+          "name": "hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "parent_hash": {
+          "name": "parent_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "close_time": {
+          "name": "close_time",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "txn_count": {
+          "name": "txn_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "indexed_at": {
+          "name": "indexed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.ledger_gap": {
+      "name": "ledger_gap",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "ledger_gap_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "range_start": {
+          "name": "range_start",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "range_end": {
+          "name": "range_end",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "state": {
+          "name": "state",
+          "type": "gap_state",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "ledger_gap_state_idx": {
+          "name": "ledger_gap_state_idx",
+          "columns": [
+            {
+              "expression": "state",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "range_start",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.account": {
+      "name": "account",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "account_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "address": {
+          "name": "address",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "blackholed": {
+          "name": "blackholed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "pseudo": {
+          "name": "pseudo",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "pseudo_source": {
+          "name": "pseudo_source",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "domain": {
+          "name": "domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "flags": {
+          "name": "flags",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "first_seen_ledger": {
+          "name": "first_seen_ledger",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "account_address_unique": {
+          "name": "account_address_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "address"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.account_balance": {
+      "name": "account_balance",
+      "schema": "",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_id": {
+          "name": "token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "balance": {
+          "name": "balance",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "account_balance_holders_idx": {
+          "name": "account_balance_holders_idx",
+          "columns": [
+            {
+              "expression": "token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ledger_seq",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "account_balance_asof_idx": {
+          "name": "account_balance_asof_idx",
+          "columns": [
+            {
+              "expression": "account_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ledger_seq",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "account_balance_account_id_account_id_fk": {
+          "name": "account_balance_account_id_account_id_fk",
+          "tableFrom": "account_balance",
+          "tableTo": "account",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "account_balance_token_id_token_id_fk": {
+          "name": "account_balance_token_id_token_id_fk",
+          "tableFrom": "account_balance",
+          "tableTo": "token",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "account_balance_account_id_token_id_ledger_seq_pk": {
+          "name": "account_balance_account_id_token_id_ledger_seq_pk",
+          "columns": [
+            "account_id",
+            "token_id",
+            "ledger_seq"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.token": {
+      "name": "token",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "token_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "token_type": {
+          "name": "token_type",
+          "type": "token_type",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "currency": {
+          "name": "currency",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mpt_issuance_id": {
+          "name": "mpt_issuance_id",
+          "type": "varchar(48)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "first_seen_ledger": {
+          "name": "first_seen_ledger",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "token_iou_uq": {
+          "name": "token_iou_uq",
+          "columns": [
+            {
+              "expression": "currency",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"token\".\"token_type\" = 'IOU'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "token_mpt_uq": {
+          "name": "token_mpt_uq",
+          "columns": [
+            {
+              "expression": "mpt_issuance_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"token\".\"token_type\" = 'MPT'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "token_xrp_uq": {
+          "name": "token_xrp_uq",
+          "columns": [
+            {
+              "expression": "token_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"token\".\"token_type\" = 'XRP'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "token_issuer_idx": {
+          "name": "token_issuer_idx",
+          "columns": [
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "token_issuer_id_account_id_fk": {
+          "name": "token_issuer_id_account_id_fk",
+          "tableFrom": "token",
+          "tableTo": "account",
+          "columnsFrom": [
+            "issuer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.token_exchange": {
+      "name": "token_exchange",
+      "schema": "",
+      "columns": {
+        "tx_hash": {
+          "name": "tx_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idx": {
+          "name": "idx",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taker_paid_token_id": {
+          "name": "taker_paid_token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taker_paid_value": {
+          "name": "taker_paid_value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taker_got_token_id": {
+          "name": "taker_got_token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taker_got_value": {
+          "name": "taker_got_value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taker_id": {
+          "name": "taker_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "maker_id": {
+          "name": "maker_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "token_exchange_pair_idx": {
+          "name": "token_exchange_pair_idx",
+          "columns": [
+            {
+              "expression": "taker_paid_token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "taker_got_token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ledger_seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "token_exchange_ledger_idx": {
+          "name": "token_exchange_ledger_idx",
+          "columns": [
+            {
+              "expression": "ledger_seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "token_exchange_taker_paid_token_id_token_id_fk": {
+          "name": "token_exchange_taker_paid_token_id_token_id_fk",
+          "tableFrom": "token_exchange",
+          "tableTo": "token",
+          "columnsFrom": [
+            "taker_paid_token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "token_exchange_taker_got_token_id_token_id_fk": {
+          "name": "token_exchange_taker_got_token_id_token_id_fk",
+          "tableFrom": "token_exchange",
+          "tableTo": "token",
+          "columnsFrom": [
+            "taker_got_token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "token_exchange_taker_id_account_id_fk": {
+          "name": "token_exchange_taker_id_account_id_fk",
+          "tableFrom": "token_exchange",
+          "tableTo": "account",
+          "columnsFrom": [
+            "taker_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "token_exchange_maker_id_account_id_fk": {
+          "name": "token_exchange_maker_id_account_id_fk",
+          "tableFrom": "token_exchange",
+          "tableTo": "account",
+          "columnsFrom": [
+            "maker_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "token_exchange_tx_hash_idx_pk": {
+          "name": "token_exchange_tx_hash_idx_pk",
+          "columns": [
+            "tx_hash",
+            "idx"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.token_holders": {
+      "name": "token_holders",
+      "schema": "",
+      "columns": {
+        "token_id": {
+          "name": "token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "token_holders_token_id_token_id_fk": {
+          "name": "token_holders_token_id_token_id_fk",
+          "tableFrom": "token_holders",
+          "tableTo": "token",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "token_holders_token_id_ledger_seq_pk": {
+          "name": "token_holders_token_id_ledger_seq_pk",
+          "columns": [
+            "token_id",
+            "ledger_seq"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.token_marketcap": {
+      "name": "token_marketcap",
+      "schema": "",
+      "columns": {
+        "token_id": {
+          "name": "token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "token_marketcap_token_id_token_id_fk": {
+          "name": "token_marketcap_token_id_token_id_fk",
+          "tableFrom": "token_marketcap",
+          "tableTo": "token",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "token_marketcap_token_id_ledger_seq_pk": {
+          "name": "token_marketcap_token_id_ledger_seq_pk",
+          "columns": [
+            "token_id",
+            "ledger_seq"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.token_supply": {
+      "name": "token_supply",
+      "schema": "",
+      "columns": {
+        "token_id": {
+          "name": "token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "token_supply_token_id_token_id_fk": {
+          "name": "token_supply_token_id_token_id_fk",
+          "tableFrom": "token_supply",
+          "tableTo": "token",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "token_supply_token_id_ledger_seq_pk": {
+          "name": "token_supply_token_id_ledger_seq_pk",
+          "columns": [
+            "token_id",
+            "ledger_seq"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.token_trustlines": {
+      "name": "token_trustlines",
+      "schema": "",
+      "columns": {
+        "token_id": {
+          "name": "token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "value": {
+          "name": "value",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "token_trustlines_token_id_token_id_fk": {
+          "name": "token_trustlines_token_id_token_id_fk",
+          "tableFrom": "token_trustlines",
+          "tableTo": "token",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "token_trustlines_token_id_ledger_seq_pk": {
+          "name": "token_trustlines_token_id_ledger_seq_pk",
+          "columns": [
+            "token_id",
+            "ledger_seq"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nft": {
+      "name": "nft",
+      "schema": "",
+      "columns": {
+        "token_id": {
+          "name": "token_id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "collection_id": {
+          "name": "collection_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "taxon": {
+          "name": "taxon",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "serial": {
+          "name": "serial",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "flags": {
+          "name": "flags",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "transfer_fee": {
+          "name": "transfer_fee",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "uri": {
+          "name": "uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "mint_ledger_seq": {
+          "name": "mint_ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "burn_ledger_seq": {
+          "name": "burn_ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "live": {
+          "name": "live",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": true
+        }
+      },
+      "indexes": {
+        "nft_owner_idx": {
+          "name": "nft_owner_idx",
+          "columns": [
+            {
+              "expression": "owner_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nft_collection_idx": {
+          "name": "nft_collection_idx",
+          "columns": [
+            {
+              "expression": "collection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "serial",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nft_issuer_taxon_idx": {
+          "name": "nft_issuer_taxon_idx",
+          "columns": [
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "taxon",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "nft_issuer_id_account_id_fk": {
+          "name": "nft_issuer_id_account_id_fk",
+          "tableFrom": "nft",
+          "tableTo": "account",
+          "columnsFrom": [
+            "issuer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "nft_owner_id_account_id_fk": {
+          "name": "nft_owner_id_account_id_fk",
+          "tableFrom": "nft",
+          "tableTo": "account",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "nft_collection_id_nft_collection_id_fk": {
+          "name": "nft_collection_id_nft_collection_id_fk",
+          "tableFrom": "nft",
+          "tableTo": "nft_collection",
+          "columnsFrom": [
+            "collection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nft_collection": {
+      "name": "nft_collection",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "nft_collection_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "issuer_id": {
+          "name": "issuer_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "taxon": {
+          "name": "taxon",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "first_seen_ledger": {
+          "name": "first_seen_ledger",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "nft_collection_uq": {
+          "name": "nft_collection_uq",
+          "columns": [
+            {
+              "expression": "issuer_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "taxon",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "nft_collection_issuer_id_account_id_fk": {
+          "name": "nft_collection_issuer_id_account_id_fk",
+          "tableFrom": "nft_collection",
+          "tableTo": "account",
+          "columnsFrom": [
+            "issuer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nft_exchange": {
+      "name": "nft_exchange",
+      "schema": "",
+      "columns": {
+        "tx_hash": {
+          "name": "tx_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "idx": {
+          "name": "idx",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "nft_token_id": {
+          "name": "nft_token_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "seller_id": {
+          "name": "seller_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "buyer_id": {
+          "name": "buyer_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "amount": {
+          "name": "amount",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "nft_exchange_token_idx": {
+          "name": "nft_exchange_token_idx",
+          "columns": [
+            {
+              "expression": "nft_token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ledger_seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nft_exchange_ledger_idx": {
+          "name": "nft_exchange_ledger_idx",
+          "columns": [
+            {
+              "expression": "ledger_seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "nft_exchange_nft_token_id_nft_token_id_fk": {
+          "name": "nft_exchange_nft_token_id_nft_token_id_fk",
+          "tableFrom": "nft_exchange",
+          "tableTo": "nft",
+          "columnsFrom": [
+            "nft_token_id"
+          ],
+          "columnsTo": [
+            "token_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "nft_exchange_seller_id_account_id_fk": {
+          "name": "nft_exchange_seller_id_account_id_fk",
+          "tableFrom": "nft_exchange",
+          "tableTo": "account",
+          "columnsFrom": [
+            "seller_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "nft_exchange_buyer_id_account_id_fk": {
+          "name": "nft_exchange_buyer_id_account_id_fk",
+          "tableFrom": "nft_exchange",
+          "tableTo": "account",
+          "columnsFrom": [
+            "buyer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "nft_exchange_tx_hash_idx_pk": {
+          "name": "nft_exchange_tx_hash_idx_pk",
+          "columns": [
+            "tx_hash",
+            "idx"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nft_offer": {
+      "name": "nft_offer",
+      "schema": "",
+      "columns": {
+        "offer_id": {
+          "name": "offer_id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "nft_token_id": {
+          "name": "nft_token_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "account_id": {
+          "name": "account_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "amount": {
+          "name": "amount",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "is_sell": {
+          "name": "is_sell",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "destination_id": {
+          "name": "destination_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expiration": {
+          "name": "expiration",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_ledger_seq": {
+          "name": "created_ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "closed_ledger_seq": {
+          "name": "closed_ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {
+        "nft_offer_token_idx": {
+          "name": "nft_offer_token_idx",
+          "columns": [
+            {
+              "expression": "nft_token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "nft_offer_open_idx": {
+          "name": "nft_offer_open_idx",
+          "columns": [
+            {
+              "expression": "nft_token_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "closed_ledger_seq",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "nft_offer_nft_token_id_nft_token_id_fk": {
+          "name": "nft_offer_nft_token_id_nft_token_id_fk",
+          "tableFrom": "nft_offer",
+          "tableTo": "nft",
+          "columnsFrom": [
+            "nft_token_id"
+          ],
+          "columnsTo": [
+            "token_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "nft_offer_account_id_account_id_fk": {
+          "name": "nft_offer_account_id_account_id_fk",
+          "tableFrom": "nft_offer",
+          "tableTo": "account",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "nft_offer_destination_id_account_id_fk": {
+          "name": "nft_offer_destination_id_account_id_fk",
+          "tableFrom": "nft_offer",
+          "tableTo": "account",
+          "columnsFrom": [
+            "destination_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.amm": {
+      "name": "amm",
+      "schema": "",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "asset1_token_id": {
+          "name": "asset1_token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "asset2_token_id": {
+          "name": "asset2_token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lp_token_currency": {
+          "name": "lp_token_currency",
+          "type": "varchar(40)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "trading_fee": {
+          "name": "trading_fee",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_ledger_seq": {
+          "name": "created_ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "amm_account_id_account_id_fk": {
+          "name": "amm_account_id_account_id_fk",
+          "tableFrom": "amm",
+          "tableTo": "account",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "amm_asset1_token_id_token_id_fk": {
+          "name": "amm_asset1_token_id_token_id_fk",
+          "tableFrom": "amm",
+          "tableTo": "token",
+          "columnsFrom": [
+            "asset1_token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "amm_asset2_token_id_token_id_fk": {
+          "name": "amm_asset2_token_id_token_id_fk",
+          "tableFrom": "amm",
+          "tableTo": "token",
+          "columnsFrom": [
+            "asset2_token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.oracle": {
+      "name": "oracle",
+      "schema": "",
+      "columns": {
+        "oracle_id": {
+          "name": "oracle_id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "provider": {
+          "name": "provider",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "asset_class": {
+          "name": "asset_class",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "uri": {
+          "name": "uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_update_time": {
+          "name": "last_update_time",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "price_data_count": {
+          "name": "price_data_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "oracle_owner_id_account_id_fk": {
+          "name": "oracle_owner_id_account_id_fk",
+          "tableFrom": "oracle",
+          "tableTo": "account",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.vault": {
+      "name": "vault",
+      "schema": "",
+      "columns": {
+        "vault_id": {
+          "name": "vault_id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "owner_id": {
+          "name": "owner_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "pseudo_account_id": {
+          "name": "pseudo_account_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "asset_token_id": {
+          "name": "asset_token_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "share_mpt_id": {
+          "name": "share_mpt_id",
+          "type": "varchar(48)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assets_total": {
+          "name": "assets_total",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assets_available": {
+          "name": "assets_available",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "assets_maximum": {
+          "name": "assets_maximum",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "flags": {
+          "name": "flags",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "ledger_seq": {
+          "name": "ledger_seq",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "vault_owner_id_account_id_fk": {
+          "name": "vault_owner_id_account_id_fk",
+          "tableFrom": "vault",
+          "tableTo": "account",
+          "columnsFrom": [
+            "owner_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vault_pseudo_account_id_account_id_fk": {
+          "name": "vault_pseudo_account_id_account_id_fk",
+          "tableFrom": "vault",
+          "tableTo": "account",
+          "columnsFrom": [
+            "pseudo_account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        },
+        "vault_asset_token_id_token_id_fk": {
+          "name": "vault_asset_token_id_token_id_fk",
+          "tableFrom": "vault",
+          "tableTo": "token",
+          "columnsFrom": [
+            "asset_token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.dashboard_snapshot": {
+      "name": "dashboard_snapshot",
+      "schema": "",
+      "columns": {
+        "ts": {
+          "name": "ts",
+          "type": "timestamp with time zone",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "now()"
+        },
+        "stats": {
+          "name": "stats",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.issuer_meta": {
+      "name": "issuer_meta",
+      "schema": "",
+      "columns": {
+        "account_id": {
+          "name": "account_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "icon_uri": {
+          "name": "icon_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "twitter": {
+          "name": "twitter",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "domain": {
+          "name": "domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "verified": {
+          "name": "verified",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "source": {
+          "name": "source",
+          "type": "meta_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "issuer_meta_account_id_account_id_fk": {
+          "name": "issuer_meta_account_id_account_id_fk",
+          "tableFrom": "issuer_meta",
+          "tableTo": "account",
+          "columnsFrom": [
+            "account_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nft_collection_stats": {
+      "name": "nft_collection_stats",
+      "schema": "",
+      "columns": {
+        "collection_id": {
+          "name": "collection_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_uri": {
+          "name": "image_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "supply": {
+          "name": "supply",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "holders": {
+          "name": "holders",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "floor": {
+          "name": "floor",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "volume_24h": {
+          "name": "volume_24h",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "volume_7d": {
+          "name": "volume_7d",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "volume_all": {
+          "name": "volume_all",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "trades_24h": {
+          "name": "trades_24h",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "trades_7d": {
+          "name": "trades_7d",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "nft_collection_stats_collection_id_nft_collection_id_fk": {
+          "name": "nft_collection_stats_collection_id_nft_collection_id_fk",
+          "tableFrom": "nft_collection_stats",
+          "tableTo": "nft_collection",
+          "columnsFrom": [
+            "collection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.nft_meta": {
+      "name": "nft_meta",
+      "schema": "",
+      "columns": {
+        "nft_token_id": {
+          "name": "nft_token_id",
+          "type": "varchar(64)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "image_uri": {
+          "name": "image_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "media_uri": {
+          "name": "media_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "media_type": {
+          "name": "media_type",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "attributes": {
+          "name": "attributes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "collection_name": {
+          "name": "collection_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "source": {
+          "name": "source",
+          "type": "meta_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "nft_meta_nft_token_id_nft_token_id_fk": {
+          "name": "nft_meta_nft_token_id_nft_token_id_fk",
+          "tableFrom": "nft_meta",
+          "tableTo": "nft",
+          "columnsFrom": [
+            "nft_token_id"
+          ],
+          "columnsTo": [
+            "token_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.token_meta": {
+      "name": "token_meta",
+      "schema": "",
+      "columns": {
+        "token_id": {
+          "name": "token_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "name": {
+          "name": "name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "icon_uri": {
+          "name": "icon_uri",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "domain": {
+          "name": "domain",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "links": {
+          "name": "links",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "trust_level": {
+          "name": "trust_level",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "source": {
+          "name": "source",
+          "type": "meta_source",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "raw": {
+          "name": "raw",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "error": {
+          "name": "error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fetched_at": {
+          "name": "fetched_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "token_meta_token_id_token_id_fk": {
+          "name": "token_meta_token_id_token_id_fk",
+          "tableFrom": "token_meta",
+          "tableTo": "token",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.token_stats": {
+      "name": "token_stats",
+      "schema": "",
+      "columns": {
+        "token_id": {
+          "name": "token_id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "holders": {
+          "name": "holders",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "trustlines": {
+          "name": "trustlines",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "supply": {
+          "name": "supply",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "marketcap": {
+          "name": "marketcap",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "price": {
+          "name": "price",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "volume_24h": {
+          "name": "volume_24h",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "volume_7d": {
+          "name": "volume_7d",
+          "type": "numeric",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'0'"
+        },
+        "exchanges_24h": {
+          "name": "exchanges_24h",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "exchanges_7d": {
+          "name": "exchanges_7d",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "takers_24h": {
+          "name": "takers_24h",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "takers_7d": {
+          "name": "takers_7d",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "computed_at": {
+          "name": "computed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "token_stats_token_id_token_id_fk": {
+          "name": "token_stats_token_id_token_id_fk",
+          "tableFrom": "token_stats",
+          "tableTo": "token",
+          "columnsFrom": [
+            "token_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.admin_session": {
+      "name": "admin_session",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(36)",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "admin_user_id": {
+          "name": "admin_user_id",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "token_hash": {
+          "name": "token_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {
+        "admin_session_admin_user_id_admin_user_id_fk": {
+          "name": "admin_session_admin_user_id_admin_user_id_fk",
+          "tableFrom": "admin_session",
+          "tableTo": "admin_user",
+          "columnsFrom": [
+            "admin_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "admin_session_token_hash_unique": {
+          "name": "admin_session_token_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "token_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.admin_user": {
+      "name": "admin_user",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "admin_user_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "username": {
+          "name": "username",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "password_hash": {
+          "name": "password_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_login_at": {
+          "name": "last_login_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "admin_user_username_unique": {
+          "name": "admin_user_username_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "username"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.api_key": {
+      "name": "api_key",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigint",
+          "primaryKey": true,
+          "notNull": true,
+          "identity": {
+            "type": "always",
+            "name": "api_key_id_seq",
+            "schema": "public",
+            "increment": "1",
+            "startWith": "1",
+            "minValue": "1",
+            "maxValue": "9223372036854775807",
+            "cache": "1",
+            "cycle": false
+          }
+        },
+        "label": {
+          "name": "label",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_hash": {
+          "name": "key_hash",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "key_prefix": {
+          "name": "key_prefix",
+          "type": "varchar(12)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "scopes": {
+          "name": "scopes",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "rate_limit": {
+          "name": "rate_limit",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 120
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "revoked_at": {
+          "name": "revoked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "api_key_key_hash_unique": {
+          "name": "api_key_key_hash_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "key_hash"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.snapshot_state": {
+      "name": "snapshot_state",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "default": 1
+        },
+        "status": {
+          "name": "status",
+          "type": "varchar(16)",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'none'"
+        },
+        "snapshot_ledger": {
+          "name": "snapshot_ledger",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cursor_type": {
+          "name": "cursor_type",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "cursor_marker": {
+          "name": "cursor_marker",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_passes": {
+          "name": "completed_passes",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'"
+        },
+        "entries_processed": {
+          "name": "entries_processed",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "started_at": {
+          "name": "started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "completed_at": {
+          "name": "completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    }
+  },
+  "enums": {
+    "public.gap_state": {
+      "name": "gap_state",
+      "schema": "public",
+      "values": [
+        "pending",
+        "running",
+        "done"
+      ]
+    },
+    "public.meta_source": {
+      "name": "meta_source",
+      "schema": "public",
+      "values": [
+        "uri",
+        "bithomp",
+        "xrplto",
+        "xrplmeta",
+        "toml"
+      ]
+    },
+    "public.token_type": {
+      "name": "token_type",
+      "schema": "public",
+      "values": [
+        "XRP",
+        "IOU",
+        "MPT"
+      ]
+    }
+  },
+  "schemas": {},
+  "sequences": {},
+  "roles": {},
+  "policies": {},
+  "views": {},
+  "_meta": {
+    "columns": {},
+    "schemas": {},
+    "tables": {}
+  }
+}

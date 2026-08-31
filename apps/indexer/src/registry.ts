@@ -1,5 +1,5 @@
 import type { TokenType } from "@xrpl-indexer/core";
-import { type Db, eq, schema, sql } from "@xrpl-indexer/db";
+import { and, type Db, eq, inArray, schema, sql } from "@xrpl-indexer/db";
 
 const { account, token, nftCollection } = schema;
 
@@ -58,6 +58,67 @@ export class Registry {
       .returning({ id: account.id });
     this.accounts.set(address, row!.id);
     return row!.id;
+  }
+
+  /**
+   * Resolve a batch of addresses in two round-trips (insert-missing + select),
+   * populating the cache. After this, `accountId()` for these is a cache hit.
+   * Used by the snapshot to avoid one round-trip per ledger entry.
+   */
+  async bulkEnsureAccounts(addresses: Iterable<string>, firstSeenLedger: number): Promise<void> {
+    const missing = [...new Set(addresses)].filter((a) => a && !this.accounts.has(a));
+    if (missing.length === 0) return;
+    for (let i = 0; i < missing.length; i += 5000) {
+      const chunk = missing.slice(i, i + 5000);
+      await this.db
+        .insert(account)
+        .values(chunk.map((address) => ({ address, firstSeenLedger })))
+        .onConflictDoNothing();
+      const rows = await this.db
+        .select({ id: account.id, address: account.address })
+        .from(account)
+        .where(inArray(account.address, chunk));
+      for (const r of rows) this.accounts.set(r.address, r.id);
+    }
+  }
+
+  /** Synchronous cache read — undefined on miss. */
+  cachedAccountId(address: string): number | undefined {
+    return this.accounts.get(address);
+  }
+
+  /**
+   * Bulk insert-missing + select for a batch of (currency, issuerId) IOU tokens,
+   * populating the cache. Snapshot use — avoids one round-trip per trustline.
+   */
+  async bulkEnsureIouTokens(
+    pairs: { currency: string; issuerId: number }[],
+    firstSeenLedger: number,
+  ): Promise<void> {
+    const uniq = new Map<string, { currency: string; issuerId: number }>();
+    for (const p of pairs) {
+      const key = `IOU:${p.currency}:${p.issuerId}`;
+      if (!this.tokens.has(key)) uniq.set(key, p);
+    }
+    if (uniq.size === 0) return;
+    const rows = [...uniq.values()];
+    for (let i = 0; i < rows.length; i += 5000) {
+      const chunk = rows.slice(i, i + 5000);
+      await this.db
+        .insert(token)
+        .values(chunk.map((p) => ({ tokenType: "IOU" as const, ...p, firstSeenLedger })))
+        .onConflictDoNothing();
+    }
+    const issuerIds = [...new Set(rows.map((p) => p.issuerId))];
+    const existing = await this.db
+      .select({ id: token.id, currency: token.currency, issuerId: token.issuerId })
+      .from(token)
+      .where(and(eq(token.tokenType, "IOU"), inArray(token.issuerId, issuerIds)));
+    for (const r of existing) {
+      if (r.currency != null && r.issuerId != null) {
+        this.tokens.set(`IOU:${r.currency}:${r.issuerId}`, r.id);
+      }
+    }
   }
 
   async xrpTokenId(firstSeenLedger: number): Promise<number> {

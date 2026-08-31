@@ -147,7 +147,42 @@ export class XrplClient {
     });
     return normalizeFullLedger(result.ledger);
   }
+
+  /**
+   * One page of `ledger_data` — the raw ledger objects at a given ledger.
+   * `ledgerNotFound` is true when the node doesn't retain that ledger's state.
+   */
+  async ledgerData(params: {
+    ledgerIndex: number;
+    type?: string;
+    marker?: unknown;
+    limit?: number;
+  }): Promise<{ state: LedgerDataEntry[]; marker?: unknown; ledgerNotFound: boolean }> {
+    const req: Record<string, unknown> = {
+      command: "ledger_data",
+      ledger_index: params.ledgerIndex,
+      binary: false,
+      limit: params.limit ?? 2048,
+    };
+    if (params.type) req.type = params.type;
+    if (params.marker !== undefined) req.marker = params.marker;
+    try {
+      const result = await this.request<{ state?: LedgerDataEntry[]; marker?: unknown }>(req);
+      return { state: result.state ?? [], marker: result.marker, ledgerNotFound: false };
+    } catch (err) {
+      if (String((err as { data?: { error?: string } })?.data?.error ?? err).includes("lgrNotFound")) {
+        return { state: [], ledgerNotFound: true };
+      }
+      throw err;
+    }
+  }
 }
+
+/** A raw ledger entry as returned by `ledger_data` (fields as they are on-ledger). */
+export type LedgerDataEntry = Record<string, unknown> & {
+  LedgerEntryType: string;
+  index: string;
+};
 
 interface RawLedger {
   ledger_hash: string;

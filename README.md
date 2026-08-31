@@ -152,6 +152,31 @@ public full-history cluster. The live syncer also automatically falls back to th
 backfill endpoints if it needs a ledger the sync node has already pruned (e.g.
 after a long outage), so a non-full-history Clio is safe for day-to-day sync.
 
+### Initial state snapshot
+
+Live sync only captures `AffectedNodes` deltas from the moment it starts, so a
+dormant trustline / NFT / pool that's never touched again would stay invisible.
+On first start (or on the next restart of an already-running indexer),
+`INDEXER_SNAPSHOT_ON_START=true` runs a one-time `ledger_data` walk of the full
+ledger state and feeds every object through the same handlers, then hands off to
+live sync which catches up from the checkpoint to current.
+
+- **Self-detecting.** Tracked in the `snapshot_state` table — if it has never
+  reached `done`, the snapshot runs. Existing databases just need `pnpm db:migrate`
+  (adds `snapshot_state`) and a restart.
+- **Snapshots at the checkpoint ledger** when one exists, so it fills in the
+  dormant objects *as of where delta-sync already is* — `INSERT … DO NOTHING`
+  means it never regresses state you already have. Fresh DB → snapshots at
+  current and seeds the checkpoint.
+- **Resumable.** Kill it (PM2 restart, crash) and it continues from the persisted
+  pass + marker.
+- **Speed depends on the node.** Point `XRPL_SNAPSHOT_ENDPOINTS` at your own Clio
+  — it returns 2048-entry `ledger_data` pages; public proxies cap around 75/page,
+  ~25× slower. On a dedicated Clio expect roughly 30–90 min for the whole walk;
+  on a throttled public endpoint, several hours. Runs once.
+- `pnpm --filter @xrpl-indexer/indexer start -- --mode=snapshot` runs just the
+  snapshot and exits.
+
 **Per-process footprint** (steady state, once caught up):
 
 | Process | vCPU | RAM | Notes |

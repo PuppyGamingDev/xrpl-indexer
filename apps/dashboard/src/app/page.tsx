@@ -1,7 +1,7 @@
 import { Sparkline } from "@/components/Sparkline";
 import { Bar, Panel, StatCard } from "@/components/ui";
 import { api, apiSafe } from "@/lib/api";
-import { num, pct } from "@/lib/format";
+import { int, num, pct } from "@/lib/format";
 import type { ServerStats, StatsHistoryRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -26,8 +26,14 @@ export default async function OverviewPage() {
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
         <StatCard
           label="Indexed ledger"
-          value={num(stats.ledger.latestSequence)}
-          sub={stats.ledger.closeTime ? new Date(stats.ledger.closeTime).toUTCString().slice(17, 25) + " UTC" : "—"}
+          value={int(stats.ledger.latestSequence)}
+          sub={
+            stats.ledger.firstSequence
+              ? `from ${int(stats.ledger.firstSequence)}`
+              : stats.ledger.closeTime
+                ? new Date(stats.ledger.closeTime).toUTCString().slice(17, 25) + " UTC"
+                : "—"
+          }
         />
         <StatCard
           label="Sync lag"

@@ -198,3 +198,42 @@ async function upsertNftFull(
     live: true,
   });
 }
+
+// ---------------------------------------------------------------------------
+// Snapshot entrypoints — fed synthetic "created" nodes from `ledger_data`.
+// ---------------------------------------------------------------------------
+
+/** An NFTokenPage from `ledger_data`: every NFT it lists is owned by the page owner. */
+export async function snapshotNftPage(
+  node: NormalizedNode,
+  batch: LedgerBatch,
+  registry: Registry,
+  ledgerSeq: number,
+): Promise<void> {
+  const ownerAddr = hexToAddress(pageOwnerHex(node.ledgerIndex));
+  for (const [id, uriHex] of pageIds(node.final)) {
+    await upsertNftFull(id, ownerAddr, uriHex, batch, registry, ledgerSeq, false);
+  }
+}
+
+/** An NFTokenOffer from `ledger_data`: a live (open) offer. */
+export async function snapshotNftOffer(
+  node: NormalizedNode,
+  batch: LedgerBatch,
+  registry: Registry,
+  ledgerSeq: number,
+): Promise<void> {
+  const f = node.final;
+  const nftId = (f.NFTokenID as string | undefined)?.toUpperCase();
+  const ownerAddr = f.Owner as string | undefined;
+  if (!nftId || !ownerAddr) return;
+  await ensureNftStub(nftId, batch, registry, ledgerSeq);
+  batch.nftOffer({
+    offerId: node.ledgerIndex.toUpperCase(),
+    nftTokenId: nftId,
+    accountId: await registry.accountId(ownerAddr, ledgerSeq),
+    amount: normalizeAmount((f.Amount as XrplAmount) ?? "0"),
+    isSell: (((f.Flags as number | undefined) ?? 0) & 1) === 1,
+    createdLedgerSeq: ledgerSeq,
+  });
+}

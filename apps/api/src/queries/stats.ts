@@ -1,7 +1,12 @@
 import { type Db, sql } from "@xrpl-indexer/db";
 
 export interface ServerStats {
-  ledger: { latestSequence: number | null; closeTime: string | null; lagSeconds: number | null };
+  ledger: {
+    latestSequence: number | null;
+    firstSequence: number | null;
+    closeTime: string | null;
+    lagSeconds: number | null;
+  };
   tokens: { total: number; iou: number; mpt: number };
   nfts: { total: number; live: number; burned: number; withUri: number };
   collections: { total: number };
@@ -19,6 +24,7 @@ export async function getServerStats(db: Db): Promise<ServerStats> {
   const [row] = await db.execute<Record<string, string>>(sql`
     select
       (select max(sequence) from ledger)                                          as latest_seq,
+      (select min(sequence) from ledger)                                          as first_seq,
       (select extract(epoch from close_time)::text from ledger order by sequence desc limit 1) as close_epoch,
       (select count(*) from token where token_type <> 'XRP')                      as tokens_total,
       (select count(*) from token where token_type = 'IOU')                       as tokens_iou,
@@ -41,11 +47,13 @@ export async function getServerStats(db: Db): Promise<ServerStats> {
 
   const n = (k: string) => Number(row?.[k] ?? 0);
   const latestSequence = row?.latest_seq ? Number(row.latest_seq) : null;
+  const firstSequence = row?.first_seq ? Number(row.first_seq) : null;
   const closeEpoch = row?.close_epoch ? Number(row.close_epoch) : null;
 
   return {
     ledger: {
       latestSequence,
+      firstSequence,
       closeTime: closeEpoch ? new Date(closeEpoch * 1000).toISOString() : null,
       lagSeconds: closeEpoch ? Math.max(0, Math.round(Date.now() / 1000 - closeEpoch)) : null,
     },

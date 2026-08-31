@@ -1,3 +1,10 @@
+/** Full integer with thousands separators — never abbreviated (e.g. ledger index). */
+export function int(v: string | number | null | undefined): string {
+  if (v === null || v === undefined || v === "") return "—";
+  const n = typeof v === "string" ? Number(v) : v;
+  return Number.isFinite(n) ? n.toLocaleString() : "—";
+}
+
 export function num(v: string | number | null | undefined, digits = 0): string {
   if (v === null || v === undefined || v === "") return "—";
   const n = typeof v === "string" ? Number(v) : v;

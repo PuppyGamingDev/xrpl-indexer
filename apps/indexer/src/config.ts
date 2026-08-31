@@ -25,6 +25,12 @@ export const config = defineConfig({
    */
   XRPL_SYNC_ENDPOINTS: optionalList,
   /**
+   * Endpoints for the one-time `ledger_data` state snapshot. Point at your own
+   * Clio for full-size pages (public proxies cap `ledger_data` hard). Falls
+   * back to XRPL_SYNC_ENDPOINTS, then XRPL_ENDPOINTS.
+   */
+  XRPL_SNAPSHOT_ENDPOINTS: optionalList,
+  /**
    * Endpoints for historical range/gap backfill. Must serve old ledgers — a
    * full-history rippled/Clio (your own or a public one). Falls back to
    * XRPL_ENDPOINTS when unset.
@@ -42,6 +48,15 @@ export const config = defineConfig({
     .string()
     .default("false")
     .transform((s) => s === "true" || s === "1"),
+  /**
+   * On live-mode start, run a one-time full `ledger_data` state snapshot if one
+   * has never completed (recorded in `snapshot_state`). Resumable; then live
+   * sync catches up. Set false to keep delta-only-from-now behaviour.
+   */
+  INDEXER_SNAPSHOT_ON_START: z
+    .string()
+    .default("true")
+    .transform((s) => s !== "false" && s !== "0"),
   INDEXER_BACKFILL_FLOOR: z.coerce.number().int().nonnegative().default(0),
   INDEXER_METRICS_PORT: z.coerce.number().int().positive().default(9101),
   /** Max ledgers to fetch concurrently during backfill. */
@@ -55,3 +70,7 @@ export const syncEndpoints: string[] = config.XRPL_SYNC_ENDPOINTS ?? config.XRPL
 
 /** Endpoints for historical backfill (mode-specific list, else the shared one). */
 export const backfillEndpoints: string[] = config.XRPL_BACKFILL_ENDPOINTS ?? config.XRPL_ENDPOINTS;
+
+/** Endpoints for the initial `ledger_data` snapshot (snapshot list, else sync, else shared). */
+export const snapshotEndpoints: string[] =
+  config.XRPL_SNAPSHOT_ENDPOINTS ?? config.XRPL_SYNC_ENDPOINTS ?? config.XRPL_ENDPOINTS;
