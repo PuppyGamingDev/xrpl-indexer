@@ -31,6 +31,17 @@ export const config = defineConfig({
    */
   XRPL_BACKFILL_ENDPOINTS: optionalList,
   INDEXER_START_LEDGER: z.string().default("current"),
+  /**
+   * Record a per-ledger `account_balance` row for EVERY account's native XRP
+   * whenever it changes (fees included). This is the single largest disk
+   * consumer — off by default. When off, only AMM/Vault pseudo-accounts keep
+   * XRP-balance history (needed for pool reserve series). IOU/MPT balances and
+   * all token/NFT metrics are unaffected either way.
+   */
+  INDEXER_TRACK_XRP_BALANCES: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true" || s === "1"),
   INDEXER_BACKFILL_FLOOR: z.coerce.number().int().nonnegative().default(0),
   INDEXER_METRICS_PORT: z.coerce.number().int().positive().default(9101),
   /** Max ledgers to fetch concurrently during backfill. */

@@ -13,8 +13,24 @@ export class Registry {
   private readonly accounts = new Map<string, number>();
   private readonly tokens = new Map<string, number>();
   private readonly collections = new Map<string, number>();
+  /** account ids known to be AMM/Vault pseudo-accounts. */
+  private readonly pseudo = new Set<number>();
 
   constructor(private readonly db: Db) {}
+
+  /** Load the pseudo-account set once at startup (used to keep tracking their XRP reserves). */
+  async init(): Promise<void> {
+    const rows = await this.db.execute<{ id: number }>(sql`select id from account where pseudo = true`);
+    for (const r of rows) this.pseudo.add(r.id);
+  }
+
+  markPseudo(accountId: number): void {
+    this.pseudo.add(accountId);
+  }
+
+  isPseudo(accountId: number): boolean {
+    return this.pseudo.has(accountId);
+  }
 
   async collectionId(issuerId: number, taxon: number, firstSeenLedger: number): Promise<number> {
     const key = `${issuerId}:${taxon}`;

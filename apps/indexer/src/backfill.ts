@@ -25,6 +25,8 @@ export async function runBackfill(db: Db): Promise<void> {
   await client.connect();
   log.info({ endpoints: backfillEndpoints }, "backfill using full-history endpoints");
   const registry = new Registry(db);
+  await registry.init();
+  const processOpts = { trackXrpBalances: config.INDEXER_TRACK_XRP_BALANCES };
 
   const checkpoint = await db.query.indexerCheckpoint.findFirst();
   let head = checkpoint?.lastLedgerSeq;
@@ -64,14 +66,14 @@ export async function runBackfill(db: Db): Promise<void> {
     inflight.delete(seq);
     try {
       const full = await p;
-      const res = await processLedger(full, db, registry);
+      const res = await processLedger(full, db, registry, processOpts);
       metrics.ledgersProcessed.inc();
       if (seq % 200 === 0) log.info({ seq, txns: res.txnCount }, "backfill progress");
     } catch (err) {
       metrics.processErrors.inc();
       log.error({ err, seq }, "backfill ledger failed; retrying once");
       const full = await client.fetchLedger(seq);
-      await processLedger(full, db, registry);
+      await processLedger(full, db, registry, processOpts);
     }
   }
 

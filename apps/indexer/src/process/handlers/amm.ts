@@ -41,6 +41,7 @@ export async function handleAmm(
 
   const lp = f.LPTokenBalance as { currency?: string } | undefined;
 
+  registry.markPseudo(accountId);
   batch.patchAccount(accountId, { pseudo: true, pseudoSource: "amm" });
   batch.amm({
     accountId,

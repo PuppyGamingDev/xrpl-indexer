@@ -65,7 +65,9 @@ export function createSyncer(db: Db): Syncer {
           // its retained window and pull it from the full-history endpoints.
           const src = failures >= 2 ? await historyFetcher() : client;
           const full = await src.fetchLedger(nextSeq);
-          const res = await processLedger(full, db, registry);
+          const res = await processLedger(full, db, registry, {
+            trackXrpBalances: config.INDEXER_TRACK_XRP_BALANCES,
+          });
           const ms = Date.now() - started;
           metrics.processMs.set(ms);
           metrics.ledgersProcessed.inc();
@@ -94,6 +96,7 @@ export function createSyncer(db: Db): Syncer {
   return {
     async start() {
       await client.connect();
+      await registry.init();
       nextSeq = await resolveStart();
       log.info(
         { nextSeq, syncEndpoints, backfillEndpoints, historyIsSeparate },

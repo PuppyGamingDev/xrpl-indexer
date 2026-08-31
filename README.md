@@ -39,12 +39,37 @@ driver**; the Node services are light and mostly network-bound.
 | Tier | vCPU | RAM | Disk (NVMe SSD) | XRPL source | What you get |
 | --- | --- | --- | --- | --- | --- |
 | **Minimum** | 4 | 8 GB | 100 GB | public endpoints (`wss://xrplcluster.com`, …) | live-forward indexing from "now", API + dashboard, a few metadata workers. DB grows a few GB/month. |
-| **Recommended** | 8 | 32 GB | 500 GB – 1 TB | public endpoints, or your own Clio | comfortable live sync + a few weeks/months of history, 4–8 workers, Postgres tuned (`shared_buffers` ≈ 8 GB, `effective_cache_size` ≈ 24 GB). |
-| **Full history** | 16 | 64 GB+ | 2–4 TB, expandable | **your own Clio node or a paid full-history provider** — public endpoints will rate-limit/ban a genesis backfill | complete `account_balance` + metric history. Consider the TimescaleDB image for `account_balance` and the metric-point tables. |
+| **Recommended** | 8 | 24–32 GB | 200 GB – 1 TB | public endpoints, or your own Clio | comfortable live sync + several M ledgers of history (XRP tracking off), 4–8 workers, tuned Postgres. |
+| **Full history** | 16 | 64 GB+ | 2–4 TB, expandable | **your own Clio node or a paid full-history provider** — public endpoints will rate-limit/ban a genesis backfill | genesis backfill and/or `INDEXER_TRACK_XRP_BALANCES=true`. Use the TimescaleDB image + compression. |
 
-Disk is the number to watch: `account_balance` is an append-only per-ledger
-change log and is by far the largest table. Live-forward stays small; historical
-backfill is what turns this into a multi-hundred-GB / multi-TB database.
+### What actually consumes disk
+
+The indexer stores, roughly in size order:
+
+1. **`account_balance`** — append-only per-ledger balance-change log. IOU
+   trustlines + MPT holdings + AMM/Vault reserves. This is the largest table.
+   **Native XRP balances are *not* recorded per-account by default** —
+   `INDEXER_TRACK_XRP_BALANCES=false` skips ~50 rows/ledger (~1 M/day, ~350 M/yr
+   before indexes) of pure fee-payer churn. Turn it on only if you want an XRP
+   rich list / per-account XRP history; pool pseudo-accounts are tracked either way.
+2. **`token_exchange`** — one row per DEX fill (OfferCreate/Payment crossings).
+   Needed for price series. Comparable to the old stack's `TokenExchange`.
+3. **`nft`** — one row per NFT (`token_id` is a 64-char hex PK + 3 indexes).
+4. **`nft_meta`** — enrichment cache: name/description/URIs/`attributes` jsonb.
+5. **`token_supply` / `_holders` / `_trustlines` / `_marketcap`** — sparse
+   "value changed at ledger N" points; small.
+6. `account`, `ledger`, `nft_offer`, `nft_exchange`, `amm`, `vault`, `oracle` —
+   all minor.
+
+Postgres runs ~1.5–2.5× the on-disk size of the equivalent SQLite (per-row
+overhead, no default page compression, wider hash keys stored as text). For a
+window like "~7 M ledgers of history + full current NFT/token state + metadata"
+(~70 GB on the old SQLite stack) expect **~120–180 GB** here with XRP tracking
+off. A full genesis backfill *with* XRP tracking is where multi-TB comes from.
+For very large deployments, use the **TimescaleDB** image and turn on columnar
+compression for `account_balance` and `token_exchange` (5–20× on append-only
+time-series), and range-partition `account_balance` by ledger so old partitions
+compress or drop.
 
 ### XRPL endpoints — live vs. backfill
 

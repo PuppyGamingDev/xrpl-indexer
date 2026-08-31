@@ -22,6 +22,11 @@ export interface ProcessResult {
   touchedTokens: number;
 }
 
+export interface ProcessOptions {
+  /** Record every account's native XRP balance history (see config). */
+  trackXrpBalances: boolean;
+}
+
 /**
  * Apply one full ledger to Postgres in a single transaction. Idempotent:
  * re-running a ledger produces the same state (all writes are upserts keyed
@@ -31,9 +36,11 @@ export async function processLedger(
   full: FullLedger,
   db: Db,
   registry: Registry,
+  opts: ProcessOptions,
 ): Promise<ProcessResult> {
   const seq = full.ledgerIndex;
-  const batch = new LedgerBatch(seq);
+  const xrpTokenId = await registry.xrpTokenId(seq);
+  const batch = new LedgerBatch(seq, { xrpTokenId });
 
   for (const tx of full.transactions) {
     if (!txSucceeded(tx)) continue;
@@ -45,7 +52,7 @@ export async function processLedger(
           await handleRippleState(node, batch, registry, seq);
           break;
         case "AccountRoot":
-          await handleAccountRoot(node, batch, registry, seq);
+          await handleAccountRoot(node, batch, registry, seq, opts.trackXrpBalances);
           break;
         case "MPTokenIssuance":
           await handleMptIssuance(node, batch, registry, seq);

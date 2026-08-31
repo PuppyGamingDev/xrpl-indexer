@@ -37,8 +37,12 @@ export class LedgerBatch {
   /** Tokens whose holder set changed this ledger — recompute metric points on flush. */
   readonly touchedTokens = new Set<number>();
 
-  constructor(ledgerSeq: number) {
+  /** The XRP token id — excluded from per-ledger holder/supply recompute (meaningless + huge). */
+  private readonly xrpTokenId: number;
+
+  constructor(ledgerSeq: number, opts: { xrpTokenId: number }) {
     this.ledgerSeq = ledgerSeq;
+    this.xrpTokenId = opts.xrpTokenId;
   }
 
   balance(accountId: number, tokenId: number, balance: string): void {
@@ -48,7 +52,9 @@ export class LedgerBatch {
       ledgerSeq: this.ledgerSeq,
       balance,
     });
-    this.touchedTokens.add(tokenId);
+    // XRP "holders/supply" over every account is not a useful metric and the
+    // recompute would scan millions of rows every ledger.
+    if (tokenId !== this.xrpTokenId) this.touchedTokens.add(tokenId);
   }
 
   patchAccount(accountId: number, patch: Partial<Row<typeof account>>): void {

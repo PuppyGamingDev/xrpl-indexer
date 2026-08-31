@@ -34,6 +34,7 @@ export async function handleVault(
   const pseudoAddr = f.Account as string | undefined;
   const pseudoAccountId = pseudoAddr ? await registry.accountId(pseudoAddr, ledgerSeq) : null;
   if (pseudoAccountId !== null) {
+    registry.markPseudo(pseudoAccountId);
     batch.patchAccount(pseudoAccountId, { pseudo: true, pseudoSource: "vault" });
   }
 

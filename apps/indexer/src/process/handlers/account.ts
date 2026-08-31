@@ -15,6 +15,7 @@ export async function handleAccountRoot(
   batch: LedgerBatch,
   registry: Registry,
   ledgerSeq: number,
+  trackXrpBalances: boolean,
 ): Promise<void> {
   const f = node.final;
   const address = f.Account as string | undefined;
@@ -22,7 +23,14 @@ export async function handleAccountRoot(
 
   const accountId = await registry.accountId(address, ledgerSeq);
 
-  if (node.change !== "deleted" && f.Balance !== undefined) {
+  // Native XRP balance history is the largest table by far. Record it only when
+  // explicitly enabled, or always for AMM/Vault pseudo-accounts (their reserve
+  // series depends on it).
+  if (
+    node.change !== "deleted" &&
+    f.Balance !== undefined &&
+    (trackXrpBalances || registry.isPseudo(accountId))
+  ) {
     const xrpTokenId = await registry.xrpTokenId(ledgerSeq);
     batch.balance(accountId, xrpTokenId, dropsToXrp(String(f.Balance)));
   }
