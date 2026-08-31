@@ -25,10 +25,75 @@ A self-hosted XRP Ledger indexer, REST API, backfiller, and dashboard in one mon
 corepack enable                 # or: PATH="$HOME/.local/bin:$PATH"
 pnpm install
 cp .env.example .env             # then edit secrets
+
+# 1. infrastructure — this only starts Postgres + pgweb
 docker compose up -d             # Postgres on :5432, pgweb on :8081
 pnpm db:migrate                  # apply drizzle/*.sql
-pnpm bootstrap                   # mint the admin API key + first dashboard operator
+ADMIN_BOOTSTRAP_USER=admin ADMIN_BOOTSTRAP_PASSWORD=<pw> pnpm bootstrap   # mint admin key + seed operator
+
+# 2. the services — plain Node processes, NOT started by docker compose
+pnpm --filter @xrpl-indexer/indexer    start   # ledger → Postgres
+pnpm --filter @xrpl-indexer/api        start   # REST API on :4100
+pnpm --filter @xrpl-indexer/backfiller start   # schedules + discovery (one instance)
+WORKER_QUEUES=nft.metadata,token.metadata,issuer.metadata,stats.rollup \
+  pnpm --filter @xrpl-indexer/worker   start
 ```
+
+For anything real, run the services under a process manager rather than bare
+shells — see **Running the services** below.
+
+## Running the services
+
+`docker compose` only manages Postgres + pgweb. `indexer`, `api`, `backfiller`
+and `worker` are plain `tsx src/main.ts` processes — run them under a supervisor.
+
+### PM2 (bundled config)
+
+```bash
+pnpm add -g pm2                              # or: npm i -g pm2
+pm2 start ops/pm2/ecosystem.config.cjs
+pm2 save && pm2 startup                      # survive reboots
+pm2 status ; pm2 logs xrpl-indexer
+```
+
+**Redeploy after `git pull`:**
+
+```bash
+git pull
+pnpm install                                # picks up dependency changes
+pm2 restart ops/pm2/ecosystem.config.cjs --update-env
+```
+
+Restart just one: `pm2 restart xrpl-indexer`. The indexer is safe to bounce
+anytime — it resumes from `indexer_checkpoint` and auto-catches-up any gap
+(falling back to `XRPL_BACKFILL_ENDPOINTS` if the gap predates your sync node's
+retained window). A one-off historical fill is a separate process:
+`pnpm --filter @xrpl-indexer/indexer backfill`.
+
+### systemd (alternative)
+
+One unit per service, e.g. `/etc/systemd/system/xrpl-indexer.service`:
+
+```ini
+[Service]
+WorkingDirectory=/opt/xrpl-indexer/apps/indexer
+ExecStart=/opt/xrpl-indexer/node_modules/.bin/tsx src/main.ts
+Restart=always
+RestartSec=3
+User=xrpl
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
+```
+
+`git pull && pnpm install && sudo systemctl restart xrpl-indexer xrpl-api …`
+
+### Docker (optional)
+
+The repo ships no service image yet. If you want one, a root `Dockerfile` that
+runs any app via an `APP=indexer|api|backfiller|worker` env plus compose services
+is straightforward to add — ask if you want it.
 
 ## Hardware & sizing
 
