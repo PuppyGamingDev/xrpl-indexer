@@ -1,7 +1,6 @@
 # xrpl-indexer
 
 A self-hosted XRP Ledger indexer, REST API, backfiller, and dashboard in one monorepo.
-Full plan: [`../.claude/plans/okay-so-on-another-hidden-zephyr.md`](../.claude/plans/okay-so-on-another-hidden-zephyr.md).
 
 ## Packages
 
