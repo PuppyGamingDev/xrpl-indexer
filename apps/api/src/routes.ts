@@ -1,5 +1,5 @@
 import { InvalidParamError } from "@xrpl-indexer/core/errors";
-import { verifyOperator } from "@xrpl-indexer/db";
+import { verifyOperator } from "@xrpl-indexer/db/operators";
 import { Jobs } from "@xrpl-indexer/jobs";
 import type { FastifyInstance } from "fastify";
 import { config } from "./config.ts";
