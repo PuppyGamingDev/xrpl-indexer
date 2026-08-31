@@ -1,7 +1,7 @@
 import { createLogger } from "@xrpl-indexer/core/logger";
 import { type Db, schema, sql } from "@xrpl-indexer/db";
 import { XrplClient, type FullLedger } from "@xrpl-indexer/xrpl-client";
-import { config } from "./config.ts";
+import { backfillEndpoints, config } from "./config.ts";
 import { metrics } from "./metrics.ts";
 import { processLedger } from "./process/ledger.ts";
 import { Registry } from "./registry.ts";
@@ -20,8 +20,10 @@ export async function runBackfill(db: Db): Promise<void> {
     return;
   }
 
-  const client = new XrplClient({ endpoints: [...config.XRPL_ENDPOINTS], logger: createLogger("xrpl") });
+  // Historical fetches need a full-history node — use the backfill endpoint list.
+  const client = new XrplClient({ endpoints: [...backfillEndpoints], logger: createLogger("xrpl.history") });
   await client.connect();
+  log.info({ endpoints: backfillEndpoints }, "backfill using full-history endpoints");
   const registry = new Registry(db);
 
   const checkpoint = await db.query.indexerCheckpoint.findFirst();

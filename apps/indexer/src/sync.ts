@@ -1,7 +1,7 @@
 import { createLogger } from "@xrpl-indexer/core/logger";
 import type { Db } from "@xrpl-indexer/db";
 import { XrplClient } from "@xrpl-indexer/xrpl-client";
-import { config } from "./config.ts";
+import { backfillEndpoints, config, syncEndpoints } from "./config.ts";
 import { metrics } from "./metrics.ts";
 import { processLedger } from "./process/ledger.ts";
 import { Registry } from "./registry.ts";
@@ -16,8 +16,27 @@ export interface Syncer {
 }
 
 export function createSyncer(db: Db): Syncer {
-  const client = new XrplClient({ endpoints: [...config.XRPL_ENDPOINTS], logger: createLogger("xrpl") });
+  // Live subscription + catch-up: a (possibly non-full-history) node such as your own Clio.
+  const client = new XrplClient({ endpoints: [...syncEndpoints], logger: createLogger("xrpl.sync") });
   const registry = new Registry(db);
+
+  // Fallback for catch-up gaps the sync node can't serve (ledgers older than its
+  // retained window). Only spun up on demand.
+  const historyIsSeparate =
+    JSON.stringify([...backfillEndpoints].sort()) !== JSON.stringify([...syncEndpoints].sort());
+  let historyClient: XrplClient | undefined;
+  async function historyFetcher(): Promise<XrplClient> {
+    if (!historyIsSeparate) return client;
+    if (!historyClient) {
+      historyClient = new XrplClient({
+        endpoints: [...backfillEndpoints],
+        logger: createLogger("xrpl.history"),
+      });
+      await historyClient.connect();
+      log.info({ endpoints: backfillEndpoints }, "connected full-history endpoints for catch-up");
+    }
+    return historyClient;
+  }
 
   let nextSeq = 0;
   let draining = false;
@@ -37,11 +56,15 @@ export function createSyncer(db: Db): Syncer {
   async function drainUpTo(target: number): Promise<void> {
     if (draining) return;
     draining = true;
+    let failures = 0;
     try {
       while (!stopped && nextSeq <= target) {
         const started = Date.now();
         try {
-          const full = await client.fetchLedger(nextSeq);
+          // After two failures on the sync node, assume the ledger is outside
+          // its retained window and pull it from the full-history endpoints.
+          const src = failures >= 2 ? await historyFetcher() : client;
+          const full = await src.fetchLedger(nextSeq);
           const res = await processLedger(full, db, registry);
           const ms = Date.now() - started;
           metrics.processMs.set(ms);
@@ -50,9 +73,16 @@ export function createSyncer(db: Db): Syncer {
           metrics.ledgerLagSeconds.set(Math.max(0, Date.now() / 1000 - (full.closeTimeRipple + RIPPLE_EPOCH)));
           log.info({ seq: res.ledgerIndex, txns: res.txnCount, touched: res.touchedTokens, ms }, "ledger");
           nextSeq++;
+          failures = 0;
         } catch (err) {
+          failures++;
           metrics.processErrors.inc();
-          log.error({ err, seq: nextSeq }, "ledger processing failed; retrying in 2s");
+          log.error(
+            { err, seq: nextSeq, failures },
+            failures >= 2 && historyIsSeparate
+              ? "sync node cannot serve this ledger; falling back to full-history endpoints"
+              : "ledger processing failed; retrying in 2s",
+          );
           await sleep(2_000);
         }
       }
@@ -65,7 +95,10 @@ export function createSyncer(db: Db): Syncer {
     async start() {
       await client.connect();
       nextSeq = await resolveStart();
-      log.info({ nextSeq, endpoints: config.XRPL_ENDPOINTS }, "live sync starting");
+      log.info(
+        { nextSeq, syncEndpoints, backfillEndpoints, historyIsSeparate },
+        "live sync starting",
+      );
       client.onValidatedLedger((l) => {
         void drainUpTo(l.ledgerIndex);
       });
@@ -79,6 +112,7 @@ export function createSyncer(db: Db): Syncer {
     async stop() {
       stopped = true;
       await client.disconnect();
+      await historyClient?.disconnect();
     },
   };
 }

@@ -21,7 +21,7 @@ export function createDb(opts: CreateDbOptions = {}): { db: Db; sql: postgres.Sq
   if (!url) throw new Error("DATABASE_URL is not set");
 
   const sql = postgres(url, {
-    max: opts.max ?? 10,
+    max: opts.max ?? (process.env.DB_POOL_MAX ? Number(process.env.DB_POOL_MAX) : 10),
     prepare: true,
     connection: {
       statement_timeout: opts.statementTimeoutMs ?? 30_000,
