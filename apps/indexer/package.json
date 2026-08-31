@@ -1,0 +1,27 @@
+{
+  "name": "@xrpl-indexer/indexer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "backfill": "tsx src/main.ts --mode=backfill",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo \"(lint: noop)\""
+  },
+  "dependencies": {
+    "@xrpl-indexer/codec": "workspace:*",
+    "@xrpl-indexer/core": "workspace:*",
+    "@xrpl-indexer/db": "workspace:*",
+    "@xrpl-indexer/xrpl-client": "workspace:*",
+    "prom-client": "^15.1.3"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

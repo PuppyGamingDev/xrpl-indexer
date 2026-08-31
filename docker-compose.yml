@@ -1,0 +1,41 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: xrpl-indexer-pg
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: xrpl
+      POSTGRES_PASSWORD: xrpl
+      POSTGRES_DB: xrpl_indexer
+    command:
+      - "postgres"
+      - "-c"
+      - "max_connections=200"
+      - "-c"
+      - "shared_buffers=512MB"
+      - "-c"
+      - "work_mem=32MB"
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U xrpl -d xrpl_indexer"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  pgweb:
+    image: sosedoff/pgweb:latest
+    container_name: xrpl-indexer-pgweb
+    restart: unless-stopped
+    environment:
+      PGWEB_DATABASE_URL: postgres://xrpl:xrpl@postgres:5432/xrpl_indexer?sslmode=disable
+    ports:
+      - "8081:8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:

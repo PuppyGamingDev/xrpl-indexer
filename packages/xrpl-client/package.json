@@ -1,0 +1,23 @@
+{
+  "name": "@xrpl-indexer/xrpl-client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo \"(lint: noop)\""
+  },
+  "dependencies": {
+    "@xrpl-indexer/core": "workspace:*",
+    "xrpl": "^4.2.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

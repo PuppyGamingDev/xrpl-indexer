@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  background: #0b0e14;
+  color: #d6deeb;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+/* dataviz palette — categorical series */
+@theme {
+  --color-viz-1: #4c9aff;
+  --color-viz-2: #57d9a3;
+  --color-viz-3: #ffab00;
+  --color-viz-4: #ff7452;
+  --color-viz-5: #9f8fef;
+  --color-panel: #121722;
+  --color-panel-border: #222b3a;
+  --color-muted: #7a8aa0;
+}

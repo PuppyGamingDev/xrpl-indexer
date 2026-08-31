@@ -1,0 +1,26 @@
+{
+  "name": "@xrpl-indexer/backfiller",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/main.ts",
+    "start": "tsx src/main.ts",
+    "scan": "tsx src/main.ts --once",
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo \"(lint: noop)\""
+  },
+  "dependencies": {
+    "@xrpl-indexer/core": "workspace:*",
+    "@xrpl-indexer/db": "workspace:*",
+    "@xrpl-indexer/enrich": "workspace:*",
+    "@xrpl-indexer/jobs": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

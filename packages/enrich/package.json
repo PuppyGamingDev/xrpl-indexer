@@ -1,0 +1,26 @@
+{
+  "name": "@xrpl-indexer/enrich",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "echo \"(lint: noop)\""
+  },
+  "dependencies": {
+    "@xrpl-indexer/codec": "workspace:*",
+    "@xrpl-indexer/core": "workspace:*",
+    "@xrpl-indexer/db": "workspace:*",
+    "@xrpl-indexer/jobs": "workspace:*",
+    "@xrpl-indexer/sources": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}
