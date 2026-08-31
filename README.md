@@ -151,32 +151,29 @@ PgBouncer in front.
 
 ## Deploying the dashboard on Vercel
 
-The dashboard is a standard Next.js 15 app (`output: "standalone"`), safe to host
-on Vercel. Two connectivity requirements:
+The dashboard is a standard Next.js 15 app (`output: "standalone"`) and is
+**fully decoupled from Postgres** — it only ever talks to `apps/api`. Operator
+login goes through the API's `POST /admin/login` (double-gated: the
+`admin`-scoped key *and* the `admin_user` password). So the one requirement is:
 
-1. **`apps/api` must be reachable from Vercel** over the public internet, behind
-   TLS. It is already API-key-gated; put it on a subdomain (e.g.
-   `https://api.your-domain`) with a reverse proxy. Set `XRPL_API_BASE_URL` to
-   that URL.
-2. **Operator login needs Postgres.** `src/lib/operators.ts` verifies the
-   `admin_user` row directly, so a Vercel deployment needs `DATABASE_URL` to
-   point at a Postgres instance reachable from Vercel's functions (SSL, firewall
-   allowlist, or a connection proxy). If you don't want to expose Postgres,
-   restrict `/admin/**` to the self-hosted box instead and deploy only the
-   public pages to Vercel.
+**`apps/api` must be reachable from Vercel** over the public internet, behind
+TLS. It is already API-key-gated; put it on a subdomain (e.g.
+`https://api.your-domain`) with a reverse proxy and set `XRPL_API_BASE_URL` to
+that URL. No database exposure needed.
 
 Server-only environment variables (never prefix with `NEXT_PUBLIC_`):
 
 | Var | Purpose |
 | --- | --- |
-| `XRPL_API_BASE_URL` | public URL of `apps/api` |
+| `XRPL_API_BASE_URL` | public URL of `apps/api`, no trailing slash |
 | `XRPL_API_KEY` | key with `nfts,tokens,amm,vaults,oracles,stats` scopes — public pages |
-| `XRPL_API_ADMIN_KEY` | key with `admin` scope — `/admin/*` and `/backfill` job stats |
+| `XRPL_API_ADMIN_KEY` | key with `admin` scope — `/admin/*`, `/backfill`, and operator login |
 | `AUTH_SECRET` | 32+ byte random string for Auth.js session signing |
-| `DATABASE_URL` | Postgres, for operator (`admin_user`) verification |
 
 Mint the two API keys with `pnpm bootstrap` (first run) or from the running
-dashboard's **Admin → API Keys** page.
+dashboard's **Admin → API Keys** page. Seed the first operator with
+`ADMIN_BOOTSTRAP_USER` / `ADMIN_BOOTSTRAP_PASSWORD` (env for `pnpm bootstrap`, on
+the indexing box — not on Vercel).
 
 ## Conventions
 

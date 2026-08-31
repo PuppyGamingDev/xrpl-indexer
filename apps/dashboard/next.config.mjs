@@ -7,9 +7,6 @@ const monorepoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const nextConfig = {
   output: "standalone",
   outputFileTracingRoot: monorepoRoot,
-  // workspace packages are TS source — let Next transpile them
-  transpilePackages: ["@xrpl-indexer/db", "@xrpl-indexer/core"],
-  serverExternalPackages: ["postgres", "@node-rs/argon2"],
   eslint: { ignoreDuringBuilds: true },
   typescript: { ignoreBuildErrors: false },
 };

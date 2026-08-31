@@ -1,6 +1,7 @@
 export * from "./client.ts";
 export * as schema from "./schema/index.ts";
 export * from "./authKeys.ts";
+export * from "./operators.ts";
 
 // Re-export drizzle-orm operators so app code has one import site.
 export {

@@ -1,4 +1,5 @@
 import { InvalidParamError } from "@xrpl-indexer/core/errors";
+import { verifyOperator } from "@xrpl-indexer/db";
 import { Jobs } from "@xrpl-indexer/jobs";
 import type { FastifyInstance } from "fastify";
 import { config } from "./config.ts";
@@ -194,6 +195,15 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
 
   // ---- admin (dashboard server only) ----
+  // Operator login for the (possibly remote / Vercel-hosted) dashboard — double
+  // gated: needs the `admin`-scoped API key AND valid operator credentials.
+  app.post("/admin/login", s("admin"), async (req, reply) => {
+    const b = (req.body ?? {}) as { username?: string; password?: string };
+    const operator = await verifyOperator(db, b.username ?? "", b.password ?? "");
+    if (!operator) return reply.status(401).send({ error: "invalid credentials", code: "unauthorized" });
+    return { ok: true, operator };
+  });
+
   app.get("/admin/keys", s("admin"), async () => ({ keys: await listApiKeys(db) }));
   app.post("/admin/keys", s("admin"), async (req) => {
     const b = (req.body ?? {}) as { label?: string; scopes?: string[]; rateLimit?: number };

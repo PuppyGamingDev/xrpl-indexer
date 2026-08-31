@@ -1,32 +1,31 @@
 import "server-only";
-import { verify } from "@node-rs/argon2";
-import { createDb, schema, sql } from "@xrpl-indexer/db";
 
-const { adminUser } = schema;
-
-let dbHandle: ReturnType<typeof createDb> | undefined;
-function db() {
-  dbHandle ??= createDb({ max: 3 });
-  return dbHandle.db;
-}
+const BASE = process.env.XRPL_API_BASE_URL ?? "http://localhost:4100";
+const ADMIN_KEY = process.env.XRPL_API_ADMIN_KEY ?? process.env.XRPL_API_KEY ?? "";
 
 export interface Operator {
   id: number;
   username: string;
 }
 
+/**
+ * Verify a dashboard operator via the API's `/admin/login` endpoint. The
+ * dashboard needs no direct database access — only `XRPL_API_BASE_URL` and the
+ * admin-scoped key. Safe for a Vercel deployment.
+ */
 export async function verifyOperator(username: string, password: string): Promise<Operator | null> {
   if (!username || !password) return null;
-  const [row] = await db()
-    .select({ id: adminUser.id, username: adminUser.username, hash: adminUser.passwordHash })
-    .from(adminUser)
-    .where(sql`${adminUser.username} = ${username}`)
-    .limit(1);
-  if (!row) return null;
-
-  const ok = await verify(row.hash, password).catch(() => false);
-  if (!ok) return null;
-
-  await db().update(adminUser).set({ lastLoginAt: new Date() }).where(sql`${adminUser.id} = ${row.id}`);
-  return { id: row.id, username: row.username };
+  try {
+    const res = await fetch(`${BASE}/admin/login`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-api-key": ADMIN_KEY },
+      body: JSON.stringify({ username, password }),
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { operator?: Operator };
+    return data.operator ?? null;
+  } catch {
+    return null;
+  }
 }
