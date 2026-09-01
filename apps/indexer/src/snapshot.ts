@@ -298,6 +298,8 @@ async function recomputeAllMetrics(db: Db, seq: number): Promise<void> {
   // timeout lifted, then the three cheap aggregations read from that.
   await db.transaction(async (tx) => {
     await tx.execute(sql`set local statement_timeout = 0`);
+    // Avoid parallel workers — they allocate DSM in the container's small /dev/shm.
+    await tx.execute(sql`set local max_parallel_workers_per_gather = 0`);
     await tx.execute(sql`
       create temporary table _snap_agg on commit drop as
       with latest as (

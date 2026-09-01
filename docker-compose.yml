@@ -3,6 +3,9 @@ services:
     image: postgres:16-alpine
     container_name: xrpl-indexer-pg
     restart: unless-stopped
+    # Default container /dev/shm is 64MB — parallel query / big hash+sort plans
+    # allocate DSM segments there and fail with "No space left on device" (53100).
+    shm_size: 1gb
     environment:
       POSTGRES_USER: xrpl
       POSTGRES_PASSWORD: xrpl
@@ -15,6 +18,8 @@ services:
       - "shared_buffers=512MB"
       - "-c"
       - "work_mem=32MB"
+      - "-c"
+      - "max_parallel_workers_per_gather=2"
     ports:
       - "5432:5432"
     volumes:
