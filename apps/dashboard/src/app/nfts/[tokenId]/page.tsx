@@ -69,6 +69,12 @@ const NFT_FLAGS: [number, string][] = [
   [0x10, "mutable"],
 ];
 
+/** Link that actually opens: ipfs:// & ar:// via the same-origin proxy, else the direct URL. */
+function openHref(canonical: string | null, resolved: string | null): string | null {
+  if (canonical && /^(ipfs|ar):\/\//i.test(canonical)) return `/api/img?u=${encodeURIComponent(canonical)}`;
+  return resolved ?? null;
+}
+
 function Fact({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex flex-col gap-0.5 border-b border-panel-border py-2 last:border-0">
@@ -138,6 +144,8 @@ export default async function NftDetailPage({ params }: { params: Promise<{ toke
 
       <div className="grid gap-6 md:grid-cols-[260px_1fr]">
         <NftMedia
+          imageUri={nft.media.imageUri}
+          mediaUri={nft.media.mediaUri}
           image={nft.media.image}
           animation={nft.media.animation}
           mediaType={nft.media.mediaType}
@@ -208,8 +216,12 @@ export default async function NftDetailPage({ params }: { params: Promise<{ toke
 
       <Panel title="Canonical URIs">
         <UriRow label="On-chain URI" value={nft.uri} open={null} />
-        <UriRow label="Image" value={nft.media.imageUri} open={nft.media.image} />
-        <UriRow label="Animation" value={nft.media.mediaUri} open={nft.media.animation} />
+        <UriRow label="Image" value={nft.media.imageUri} open={openHref(nft.media.imageUri, nft.media.image)} />
+        <UriRow
+          label="Animation"
+          value={nft.media.mediaUri}
+          open={openHref(nft.media.mediaUri, nft.media.animation)}
+        />
         {!nft.uri && !nft.media.imageUri && !nft.media.mediaUri && (
           <p className="py-2 text-sm text-muted">No URIs recorded.</p>
         )}
