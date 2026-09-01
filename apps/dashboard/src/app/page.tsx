@@ -1,4 +1,5 @@
-import { Sparkline } from "@/components/Sparkline";
+import { RangeSelect } from "@/components/RangeSelect";
+import { Sparkline, type TimeStyle } from "@/components/Sparkline";
 import { Bar, Panel, StatCard } from "@/components/ui";
 import { api, apiSafe } from "@/lib/api";
 import { int, num, pct } from "@/lib/format";
@@ -6,10 +7,33 @@ import type { ServerStats, StatsHistoryRow } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
 
-export default async function OverviewPage() {
+interface Range {
+  label: string;
+  hours: number;
+  fmt: TimeStyle;
+}
+const RANGES: Record<string, Range> = {
+  hour: { label: "Last hour", hours: 1, fmt: "time" },
+  day: { label: "Last 24 hours", hours: 24, fmt: "time" },
+  week: { label: "Last week", hours: 168, fmt: "datetime" },
+  month: { label: "Last month", hours: 720, fmt: "datetime" },
+  year: { label: "Last year", hours: 8760, fmt: "date" },
+};
+const DEFAULT_RANGE = "day";
+const RANGE_OPTIONS = Object.entries(RANGES).map(([value, r]) => ({ value, label: r.label }));
+
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ range?: string }>;
+}) {
+  const { range } = await searchParams;
+  const key = range && range in RANGES ? range : DEFAULT_RANGE;
+  const r: Range = RANGES[key] ?? RANGES.day!;
+
   const [stats, history] = await Promise.all([
     api<ServerStats>("/stats", { revalidate: 5 }),
-    apiSafe<StatsHistoryRow[]>("/stats/history?hours=72", { revalidate: 30 }),
+    apiSafe<StatsHistoryRow[]>(`/stats/history?hours=${r.hours}`, { revalidate: 30 }),
   ]);
 
   const lag = stats.ledger.lagSeconds;
@@ -76,19 +100,32 @@ export default async function OverviewPage() {
           </p>
         </Panel>
 
-        <Panel title="Trend (72h)">
+        <Panel
+          title="Trend"
+          action={<RangeSelect param="range" value={key} options={RANGE_OPTIONS} />}
+        >
           <div className="space-y-4">
             <div>
               <div className="mb-1 text-xs text-muted">Indexed ledger</div>
-              <Sparkline data={series("latest_seq")} color="var(--color-viz-1)" label="Ledger" />
+              <Sparkline data={series("latest_seq")} color="var(--color-viz-1)" label="Ledger" timeStyle={r.fmt} />
             </div>
             <div>
               <div className="mb-1 text-xs text-muted">NFTs enriched</div>
-              <Sparkline data={series("nfts_with_meta")} color="var(--color-viz-2)" label="NFTs enriched" />
+              <Sparkline
+                data={series("nfts_with_meta")}
+                color="var(--color-viz-2)"
+                label="NFTs enriched"
+                timeStyle={r.fmt}
+              />
             </div>
             <div>
               <div className="mb-1 text-xs text-muted">Tokens enriched</div>
-              <Sparkline data={series("tokens_with_meta")} color="var(--color-viz-3)" label="Tokens enriched" />
+              <Sparkline
+                data={series("tokens_with_meta")}
+                color="var(--color-viz-3)"
+                label="Tokens enriched"
+                timeStyle={r.fmt}
+              />
             </div>
           </div>
         </Panel>

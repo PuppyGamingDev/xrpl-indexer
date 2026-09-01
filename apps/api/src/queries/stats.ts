@@ -76,10 +76,29 @@ export async function getServerStats(db: Db): Promise<ServerStats> {
   };
 }
 
-export async function getStatsHistory(db: Db, hours: number): Promise<{ ts: string; stats: unknown }[]> {
+/**
+ * Snapshot history for the given window, downsampled to at most `maxPoints`
+ * evenly-spaced buckets (last snapshot per bucket) so a year of 15-minute rows
+ * stays a small payload. Ranges below ~maxPoints snapshots come back in full.
+ */
+export async function getStatsHistory(
+  db: Db,
+  hours: number,
+  maxPoints = 240,
+): Promise<{ ts: string; stats: unknown }[]> {
+  const bucketSec = Math.max(60, Math.round((hours * 3600) / maxPoints));
   const rows = await db.execute<{ ts: string; stats: unknown }>(sql`
-    select ts::text, stats from dashboard_snapshot
-    where ts > now() - (${hours} || ' hours')::interval
+    select ts::text, stats from (
+      select distinct on (bkt) ts, stats
+      from (
+        select
+          floor(extract(epoch from ts) / ${bucketSec}) as bkt,
+          ts, stats
+        from dashboard_snapshot
+        where ts > now() - (${hours} || ' hours')::interval
+      ) b
+      order by bkt, ts desc
+    ) s
     order by ts asc
   `);
   return [...rows];

@@ -58,7 +58,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---- stats ----
   app.get("/stats", s("stats"), async () => cached("stats", ttl, () => getServerStats(db)));
   app.get("/stats/history", s("stats"), async (req) => {
-    const hours = Math.min(Math.max(Number((req.query as { hours?: string }).hours) || 72, 1), 24 * 30);
+    const hours = Math.min(Math.max(Number((req.query as { hours?: string }).hours) || 72, 1), 24 * 366);
     return cached(`stats:h:${hours}`, ttl, () => getStatsHistory(db, hours));
   });
 
