@@ -6,7 +6,7 @@
 ![Node](https://img.shields.io/badge/Node-%E2%89%A520-339933)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-4169e1)
 ![Next.js](https://img.shields.io/badge/Next.js-15-000000)
-![License](https://img.shields.io/badge/license-see%20below-lightgrey)
+![License](https://img.shields.io/badge/license-MIT-blue)
 
 The indexer subscribes to `rippled`/Clio, folds every ledger into a normalised
 Postgres schema, and exposes it as a documented REST API and a Next.js dashboard.
@@ -640,8 +640,4 @@ pnpm --filter @xrpl-indexer/<pkg> <script>   # target one workspace
 
 ## License
 
-**No license file is included yet.** Until you add one, the code is "all rights
-reserved" by default — which is not what you want for a public, self-hostable
-project. Before publishing, add a `LICENSE` file — [MIT](https://choosealicense.com/licenses/mit/)
-or [Apache-2.0](https://choosealicense.com/licenses/apache-2.0/) are the usual
-choices for infrastructure like this — and update this section.
+[MIT](LICENSE) © 2026 Puppy Tools Ltd — do anything you like with it, no warranty.
