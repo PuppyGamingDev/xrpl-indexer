@@ -53,6 +53,15 @@ const QUEUE_TUNING: Partial<Record<QueueName, PgBoss.Queue>> = {
     expireInSeconds: 1800,
     retentionMinutes: 180,
   },
+  // Periodic recompute — one at a time; if a run overruns the cron interval,
+  // extra fires collapse instead of stacking a backlog.
+  "stats.rollup": {
+    name: "stats.rollup",
+    policy: "singleton",
+    retryLimit: 0,
+    expireInSeconds: 1800,
+    retentionMinutes: 30,
+  },
 };
 
 /** Thin typed wrapper over pg-boss with our queue registry baked in. */

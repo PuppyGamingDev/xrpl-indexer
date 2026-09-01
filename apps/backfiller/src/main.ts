@@ -18,7 +18,7 @@ const config = defineConfig({
   ...baseEnvSchema,
   ...enrichEnvSchema,
   BACKFILLER_METRICS_PORT: z.coerce.number().int().positive().default(9102),
-  ROLLUP_CRON: z.string().default("*/5 * * * *"),
+  ROLLUP_CRON: z.string().default("*/15 * * * *"),
   DISCOVERY_CRON: z.string().default("*/5 * * * *"),
   TOKEN_CATALOG_CRON: z.string().default("0 */6 * * *"),
 });
@@ -50,9 +50,10 @@ log.info(
   "schedules registered",
 );
 
-// one immediate pass so a fresh DB starts filling without waiting on cron
+// one immediate pass so a fresh deploy fills / refreshes without waiting on cron
 await runDiscovery(ctx).catch((err) => log.error({ err }, "initial discovery failed"));
 await jobs.enqueue("token.catalog", {}, { key: "token.catalog:boot" }).catch(() => {});
+await jobs.enqueue("stats.rollup", {}, { key: "stats.rollup:boot" }).catch(() => {});
 
 const health = createServer((_req, res) => {
   res.writeHead(200, { "content-type": "application/json" }).end('{"status":"ok"}');
