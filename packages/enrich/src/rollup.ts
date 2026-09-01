@@ -20,8 +20,10 @@ export async function runRollup(ctx: EnrichContext): Promise<void> {
     // Take the latest metric point per token in one index pass each, then only
     // recompute stats for tokens that currently have holders/trustlines, have
     // metadata, or traded recently.
-    // Candidate set first, from the two metric tables + metadata only (no
-    // token_exchange scan). Then pull supply/marketcap/volume for just those.
+    // Candidate set from the two metric tables + metadata (both ~1.7M rows,
+    // resolved by the PK index). Trade aggregates from ONE grouped pass over the
+    // last 7 days of token_exchange (there's no index on the taker token cols,
+    // so a per-candidate lateral would seq-scan the whole table each time).
     await db.execute(sql`
       with lh as (select distinct on (token_id) token_id, value from token_holders    order by token_id, ledger_seq desc),
            lt as (select distinct on (token_id) token_id, value from token_trustlines order by token_id, ledger_seq desc),
@@ -36,6 +38,25 @@ export async function runRollup(ctx: EnrichContext): Promise<void> {
                and ( coalesce(lh.value,0) > 0
                   or coalesce(lt.value,0) > 0
                   or exists (select 1 from token_meta m where m.token_id = t.id and m.error is null) )
+           ),
+           ex as (
+             select te.taker_got_token_id as token_id, te.taker_got_value as val, te.taker_id, l.close_time
+             from token_exchange te join ledger l on l.sequence = te.ledger_seq
+             where l.close_time > now() - interval '7 days'
+             union all
+             select te.taker_paid_token_id, te.taker_got_value, te.taker_id, l.close_time
+             from token_exchange te join ledger l on l.sequence = te.ledger_seq
+             where l.close_time > now() - interval '7 days'
+           ),
+           vol as (
+             select token_id,
+               sum(val) filter (where close_time > now() - interval '24 hours') as vol_24h,
+               sum(val) as vol_7d,
+               count(*) filter (where close_time > now() - interval '24 hours') as ex_24h,
+               count(*) as ex_7d,
+               count(distinct taker_id) filter (where close_time > now() - interval '24 hours') as tk_24h,
+               count(distinct taker_id) as tk_7d
+             from ex group by token_id
            )
       insert into token_stats (token_id, holders, trustlines, supply, marketcap, price,
                                volume_24h, volume_7d, exchanges_24h, exchanges_7d,
@@ -52,18 +73,7 @@ export async function runRollup(ctx: EnrichContext): Promise<void> {
         coalesce(v.tk_24h,0), coalesce(v.tk_7d,0),
         now()
       from cand c
-      left join lateral (
-        select
-          sum(case when l.close_time > now() - interval '24 hours' then te.taker_got_value else 0 end) as vol_24h,
-          sum(te.taker_got_value) as vol_7d,
-          count(*) filter (where l.close_time > now() - interval '24 hours') as ex_24h,
-          count(*) as ex_7d,
-          count(distinct te.taker_id) filter (where l.close_time > now() - interval '24 hours') as tk_24h,
-          count(distinct te.taker_id) as tk_7d
-        from token_exchange te join ledger l on l.sequence = te.ledger_seq
-        where (te.taker_got_token_id = c.id or te.taker_paid_token_id = c.id)
-          and l.close_time > now() - interval '7 days'
-      ) v on true
+      left join vol v on v.token_id = c.id
       on conflict (token_id) do update set
         holders = excluded.holders, trustlines = excluded.trustlines, supply = excluded.supply,
         marketcap = excluded.marketcap, volume_24h = excluded.volume_24h, volume_7d = excluded.volume_7d,
