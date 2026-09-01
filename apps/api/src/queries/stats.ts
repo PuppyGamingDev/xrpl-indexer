@@ -40,9 +40,9 @@ export async function getServerStats(db: Db): Promise<ServerStats> {
       (select count(*) from vault)                                                as vaults,
       (select count(*) from oracle)                                               as oracles,
       (select count(*) from account)                                             as accounts,
-      (select count(*) from token_meta)                                          as tokens_with_meta,
-      (select count(*) from nft_meta)                                            as nfts_with_meta,
-      (select count(*) from nft_meta where attributes is not null and jsonb_array_length(attributes) > 0) as nfts_with_attrs
+      (select count(*) from token_meta where error is null)                       as tokens_with_meta,
+      (select count(*) from nft_meta where error is null)                          as nfts_with_meta,
+      (select count(*) from nft_meta where error is null and attributes is not null and jsonb_array_length(attributes) > 0) as nfts_with_attrs
   `);
 
   const n = (k: string) => Number(row?.[k] ?? 0);
