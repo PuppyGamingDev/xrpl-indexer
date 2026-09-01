@@ -1,4 +1,6 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { CopyAddr, CopyButton } from "@/components/CopyAddr";
 import { Crumb, Panel, StatCard, Table } from "@/components/ui";
 import { api, ApiError } from "@/lib/api";
 import { num, shortAddr } from "@/lib/format";
@@ -44,8 +46,9 @@ export default async function CollectionPage({
     <div className="space-y-6">
       <Crumb items={[{ href: "/nfts/collections", label: "Collections" }, { label: col.name ?? `#${col.id}` }]} />
       <h1 className="text-xl font-semibold">{col.name ?? `Collection ${col.id}`}</h1>
-      <p className="font-mono text-xs text-muted">
-        {shortAddr(col.issuer)} · taxon {col.taxon}
+      <p className="flex items-center gap-2 text-xs text-muted">
+        <CopyAddr addr={col.issuer} href={`/issuers/${col.issuer}`} />
+        <span>· taxon {col.taxon}</span>
       </p>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
@@ -56,13 +59,25 @@ export default async function CollectionPage({
       </div>
 
       <Panel title="Items">
-        <Table head={["#", "Token", "Name", "Owner"]}>
+        <Table head={["NFT ID", "Name", "Owner"]}>
           {nfts.map((n) => (
             <tr key={n.token_id}>
-              <td className="py-2 pr-4 tabular-nums">{n.serial}</td>
-              <td className="py-2 pr-4 font-mono text-xs">{n.token_id.slice(0, 16)}…</td>
-              <td className="py-2 pr-4">{n.name ?? "—"}</td>
-              <td className="py-2 pr-4 font-mono text-xs text-muted">{shortAddr(n.owner)}</td>
+              <td className="py-2 pr-4">
+                <span className="inline-flex items-center gap-1 font-mono text-xs">
+                  <Link href={`/nfts/${n.token_id}`} className="text-viz-1 hover:underline">
+                    {shortAddr(n.token_id)}
+                  </Link>
+                  <CopyButton value={n.token_id} />
+                </span>
+              </td>
+              <td className="py-2 pr-4">
+                <Link href={`/nfts/${n.token_id}`} className="hover:underline">
+                  {n.name ?? shortAddr(n.token_id)}
+                </Link>
+              </td>
+              <td className="py-2 pr-4">
+                <CopyAddr addr={n.owner} />
+              </td>
             </tr>
           ))}
         </Table>

@@ -17,6 +17,7 @@ import {
   listCollectionNfts,
   listCollections,
 } from "./queries/nfts.ts";
+import { getIssuer } from "./queries/issuers.ts";
 import { getServerStats, getStatsHistory } from "./queries/stats.ts";
 import {
   getMetricSeries,
@@ -168,6 +169,12 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
     return cached(`col:${issuer}:${taxon}:nfts:${page.limit}:${page.offset}`, ttl, () =>
       listCollectionNfts(db, issuer, Number(taxon), page).then((nfts) => ({ issuer, taxon: Number(taxon), ...page, nfts })),
     );
+  });
+
+  // ---- issuers ----
+  app.get("/issuers/:address", s("tokens"), async (req) => {
+    const { address } = req.params as { address: string };
+    return cached(`issuer:${address}`, ttl, () => getIssuer(db, address));
   });
 
   // ---- defi ----

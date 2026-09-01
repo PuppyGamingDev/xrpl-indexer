@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { CopyAddr } from "@/components/CopyAddr";
 import { Sparkline } from "@/components/Sparkline";
 import { Crumb, Panel, StatCard, Table } from "@/components/ui";
 import { api, apiSafe, ApiError } from "@/lib/api";
@@ -60,9 +61,9 @@ export default async function TokenDetailPage({ params }: { params: Promise<{ id
         {detail.blackholed && <span className="rounded bg-viz-2/20 px-2 py-0.5 text-xs text-viz-2">blackholed</span>}
         {detail.issuerPseudo && <span className="rounded bg-viz-5/20 px-2 py-0.5 text-xs text-viz-5">pool</span>}
       </div>
-      <p className="font-mono text-xs text-muted">
-        {shortAddr(detail.issuer)}
-        {detail.meta?.domain ? ` · ${detail.meta.domain}` : ""}
+      <p className="flex items-center gap-2 text-xs text-muted">
+        <CopyAddr addr={detail.issuer} href={`/issuers/${detail.issuer}`} />
+        {detail.meta?.domain ? <span>· {detail.meta.domain}</span> : null}
       </p>
 
       <div className="grid grid-cols-2 gap-4 md:grid-cols-4">

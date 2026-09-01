@@ -15,9 +15,9 @@ export default async function TokensPage({
 }) {
   const state = readListState(await searchParams, {
     defaultSort: "holders",
-    extraKeys: ["type", "verified"],
+    extraKeys: ["type", "verified", "issuer"],
   });
-  const query = toApiQuery(state, PAGE_SIZE, { verified: "verified", type: "type" });
+  const query = toApiQuery(state, PAGE_SIZE, { verified: "verified", type: "type", issuer: "issuer" });
   const res = await api<ListResponse & { tokens: TokenRow[] }>(`/tokens?${query}`);
 
   return (

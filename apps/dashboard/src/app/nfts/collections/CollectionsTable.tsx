@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { CopyAddr } from "@/components/CopyAddr";
 import { type Column, DataTable, type SetParam } from "@/components/DataTable";
-import { num } from "@/lib/format";
+import { num, shortAddr } from "@/lib/format";
 import type { ListState } from "@/lib/list";
 import type { CollectionRow } from "@/lib/types";
 
@@ -20,7 +20,7 @@ const columns: Column<CollectionRow>[] = [
       </Link>
     ),
   },
-  { key: "", header: "Issuer", render: (c) => <CopyAddr addr={c.issuer} /> },
+  { key: "", header: "Issuer", render: (c) => <CopyAddr addr={c.issuer} href={`/issuers/${c.issuer}`} /> },
   { key: "", header: "Taxon", align: "right", render: (c) => c.taxon },
   { key: "supply", header: "Supply", align: "right", render: (c) => num(c.live_supply || c.supply) },
   { key: "holders", header: "Holders", align: "right", render: (c) => num(c.holders) },
@@ -31,15 +31,27 @@ const columns: Column<CollectionRow>[] = [
 
 function Toolbar({ state, setParam }: { state: ListState; setParam: SetParam }) {
   const named = state.extra.named === "true";
+  const issuer = state.extra.issuer;
   return (
-    <label className="flex items-center gap-1 text-xs text-muted">
-      <input
-        type="checkbox"
-        checked={named}
-        onChange={(e) => setParam({ named: e.target.checked ? "true" : null })}
-      />
-      Named only
-    </label>
+    <div className="flex items-center gap-2">
+      <label className="flex items-center gap-1 text-xs text-muted">
+        <input
+          type="checkbox"
+          checked={named}
+          onChange={(e) => setParam({ named: e.target.checked ? "true" : null })}
+        />
+        Named only
+      </label>
+      {issuer && (
+        <button
+          type="button"
+          onClick={() => setParam({ issuer: null })}
+          className="flex items-center gap-1 rounded border border-panel-border px-2 py-1 text-xs text-muted hover:text-white"
+        >
+          Issued by {shortAddr(issuer)} <span className="text-viz-1">✕</span>
+        </button>
+      )}
+    </div>
   );
 }
 

@@ -1,3 +1,4 @@
+import { currencyToString } from "@xrpl-indexer/codec";
 import { NotFoundError } from "@xrpl-indexer/core/errors";
 import { type Db, sql } from "@xrpl-indexer/db";
 import { config } from "../config.ts";
@@ -8,6 +9,21 @@ function resolveGatewayUri(uri: string | null): string | null {
   if (uri.startsWith("ipfs://")) return `${config.API_DEFAULT_IPFS_GATEWAY}/ipfs/${uri.slice(7)}`;
   if (uri.startsWith("ar://")) return `https://arweave.net/${uri.slice(5)}`;
   return uri;
+}
+
+/** Human label for an `nft_offer` / `nft_exchange` amount jsonb (XRP drops string or IOU object). */
+function amountLabel(a: unknown): string {
+  if (a == null) return "—";
+  if (typeof a === "string") {
+    const xrp = Number(a) / 1_000_000;
+    return Number.isFinite(xrp) ? `${xrp.toLocaleString(undefined, { maximumFractionDigits: 6 })} XRP` : "—";
+  }
+  if (typeof a === "object") {
+    const { value, currency } = a as { value?: string; currency?: string };
+    const code = currency && currency.length > 3 ? currencyToString(currency) : currency;
+    return `${value ?? "?"} ${code ?? ""}`.trim();
+  }
+  return "—";
 }
 
 export async function getNft(db: Db, tokenId: string): Promise<unknown> {
@@ -36,6 +52,17 @@ export async function getNft(db: Db, tokenId: string): Promise<unknown> {
     order by o.created_ledger_seq desc
   `);
 
+  const sales = await db.execute<Record<string, unknown>>(sql`
+    select x.tx_hash, x.idx, x.ledger_seq, x.amount,
+           s.address as seller, b.address as buyer
+    from nft_exchange x
+    left join account s on s.id = x.seller_id
+    left join account b on b.id = x.buyer_id
+    where x.nft_token_id = ${id}
+    order by x.ledger_seq desc, x.idx desc
+    limit 25
+  `);
+
   return {
     tokenId: row.token_id,
     issuer: row.issuer,
@@ -49,7 +76,15 @@ export async function getNft(db: Db, tokenId: string): Promise<unknown> {
     burnLedgerSequence: row.burn_ledger_seq,
     uri: row.uri,
     live: row.live,
-    offers: [...offers],
+    offers: [...offers].map((o) => ({ ...o, label: amountLabel(o.amount) })),
+    sales: [...sales].map((sale) => ({ ...sale, label: amountLabel(sale.amount) })),
+    media: {
+      imageUri: (row.image_uri as string | null) ?? null,
+      mediaUri: (row.media_uri as string | null) ?? null,
+      mediaType: (row.media_type as string | null) ?? null,
+      image: resolveGatewayUri((row.image_uri as string | null) ?? null),
+      animation: resolveGatewayUri((row.media_uri as string | null) ?? null),
+    },
     meta: row.name || row.image_uri
       ? {
           name: row.name,

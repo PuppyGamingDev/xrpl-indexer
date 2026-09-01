@@ -15,9 +15,9 @@ export default async function CollectionsPage({
 }) {
   const state = readListState(await searchParams, {
     defaultSort: "supply",
-    extraKeys: ["named"],
+    extraKeys: ["named", "issuer"],
   });
-  const query = toApiQuery(state, PAGE_SIZE, { named: "namedOnly" });
+  const query = toApiQuery(state, PAGE_SIZE, { named: "namedOnly", issuer: "issuer" });
   const res = await api<ListResponse & { collections: CollectionRow[] }>(`/collections?${query}`);
 
   return (

@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { CopyAddr } from "@/components/CopyAddr";
 import { type Column, DataTable, type SetParam } from "@/components/DataTable";
-import { num } from "@/lib/format";
+import { num, shortAddr } from "@/lib/format";
 import type { ListState } from "@/lib/list";
 import type { TokenRow } from "@/lib/types";
 
@@ -25,7 +25,7 @@ const columns: Column<TokenRow>[] = [
       );
     },
   },
-  { key: "", header: "Issuer", render: (t) => <CopyAddr addr={t.issuer} /> },
+  { key: "", header: "Issuer", render: (t) => <CopyAddr addr={t.issuer} href={`/issuers/${t.issuer}`} /> },
   { key: "holders", header: "Holders", align: "right", render: (t) => num(t.holders) },
   { key: "trustlines", header: "Trustlines", align: "right", render: (t) => num(t.trustlines) },
   { key: "supply", header: "Supply", align: "right", render: (t) => num(t.supply, 2) },
@@ -47,6 +47,7 @@ function Toolbar({ state, setParam }: { state: ListState; setParam: SetParam }) 
       {label}
     </button>
   );
+  const issuer = state.extra.issuer;
   return (
     <div className="flex items-center gap-2">
       <div className="flex gap-1 rounded border border-panel-border p-0.5">
@@ -62,6 +63,15 @@ function Toolbar({ state, setParam }: { state: ListState; setParam: SetParam }) 
         />
         Verified only
       </label>
+      {issuer && (
+        <button
+          type="button"
+          onClick={() => setParam({ issuer: null })}
+          className="flex items-center gap-1 rounded border border-panel-border px-2 py-1 text-xs text-muted hover:text-white"
+        >
+          Issued by {shortAddr(issuer)} <span className="text-viz-1">✕</span>
+        </button>
+      )}
     </div>
   );
 }
