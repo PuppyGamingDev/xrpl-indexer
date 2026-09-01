@@ -66,7 +66,7 @@ export class Registry {
    * Used by the snapshot to avoid one round-trip per ledger entry.
    */
   async bulkEnsureAccounts(addresses: Iterable<string>, firstSeenLedger: number): Promise<void> {
-    const missing = [...new Set(addresses)].filter((a) => a && !this.accounts.has(a));
+    const missing = [...new Set(addresses)].filter((a) => a && !this.accounts.has(a)).sort();
     if (missing.length === 0) return;
     for (let i = 0; i < missing.length; i += 5000) {
       const chunk = missing.slice(i, i + 5000);

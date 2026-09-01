@@ -86,39 +86,41 @@ export async function processLedger(
     if (touchesNft(nodes)) await handleNft(tx, nodes, batch, registry, seq);
   }
 
-  await db.transaction(async (tx) => {
-    await tx
-      .insert(ledger)
-      .values({
-        sequence: seq,
-        hash: full.ledgerHash,
-        parentHash: full.parentHash,
-        closeTime: new Date(full.closeTimeIso),
-        txnCount: full.transactions.length,
-      })
-      .onConflictDoUpdate({
-        target: ledger.sequence,
-        set: { hash: full.ledgerHash, indexedAt: sql`now()` },
-      });
-
-    await batch.flush(tx as unknown as Db);
-
-    // Backfill only fills history below the live frontier — it must never touch
-    // the live-sync checkpoint.
-    if (!backfill) {
+  await withSerializationRetry(() =>
+    db.transaction(async (tx) => {
       await tx
-        .insert(indexerCheckpoint)
-        .values({ id: 1, lastLedgerSeq: seq, lastLedgerHash: full.ledgerHash })
+        .insert(ledger)
+        .values({
+          sequence: seq,
+          hash: full.ledgerHash,
+          parentHash: full.parentHash,
+          closeTime: new Date(full.closeTimeIso),
+          txnCount: full.transactions.length,
+        })
         .onConflictDoUpdate({
-          target: indexerCheckpoint.id,
-          set: {
-            lastLedgerSeq: sql`greatest(${indexerCheckpoint.lastLedgerSeq}, excluded.last_ledger_seq)`,
-            lastLedgerHash: sql`excluded.last_ledger_hash`,
-            updatedAt: sql`now()`,
-          },
+          target: ledger.sequence,
+          set: { hash: full.ledgerHash, indexedAt: sql`now()` },
         });
-    }
-  });
+
+      await batch.flush(tx as unknown as Db);
+
+      // Backfill only fills history below the live frontier — it must never touch
+      // the live-sync checkpoint.
+      if (!backfill) {
+        await tx
+          .insert(indexerCheckpoint)
+          .values({ id: 1, lastLedgerSeq: seq, lastLedgerHash: full.ledgerHash })
+          .onConflictDoUpdate({
+            target: indexerCheckpoint.id,
+            set: {
+              lastLedgerSeq: sql`greatest(${indexerCheckpoint.lastLedgerSeq}, excluded.last_ledger_seq)`,
+              lastLedgerHash: sql`excluded.last_ledger_hash`,
+              updatedAt: sql`now()`,
+            },
+          });
+      }
+    }),
+  );
 
   const result = { ledgerIndex: seq, txnCount: full.transactions.length, touchedTokens: batch.touchedTokens.size };
   log.debug(result, "ledger processed");
@@ -127,4 +129,23 @@ export async function processLedger(
 
 function touchesNft(nodes: ReturnType<typeof normalizeAffectedNodes>): boolean {
   return nodes.some((n) => n.entryType === "NFTokenPage" || n.entryType === "NFTokenOffer");
+}
+
+/**
+ * Retry a transaction on Postgres serialization failures (40P01 deadlock,
+ * 40001 serialization_failure). These roll the whole transaction back, and
+ * `batch.flush()` is idempotent, so replaying is safe. Concurrent writers (live
+ * sync + `--mode=backfill`) can briefly deadlock on shared `account` rows.
+ */
+async function withSerializationRetry<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  for (let i = 1; ; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const code = (err as { code?: string }).code;
+      if ((code !== "40P01" && code !== "40001") || i >= attempts) throw err;
+      log.warn({ code, attempt: i }, "transaction serialization failure; retrying");
+      await new Promise((r) => setTimeout(r, 50 * i + Math.random() * 100));
+    }
+  }
 }

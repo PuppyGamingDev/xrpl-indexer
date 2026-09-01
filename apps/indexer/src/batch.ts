@@ -122,7 +122,13 @@ export class LedgerBatch {
   async flush(tx: Db): Promise<void> {
     const snap = this.snapshot;
 
-    await chunked([...this.balances.values()], async (rows) => {
+    // Deterministic key order so concurrent writers (live sync + ledger
+    // backfill) acquire row locks on `account_balance` / `account` in the same
+    // order and block instead of deadlocking.
+    const balanceRows = [...this.balances.values()].sort(
+      (a, b) => Number(a.accountId) - Number(b.accountId) || Number(a.tokenId) - Number(b.tokenId),
+    );
+    await chunked(balanceRows, async (rows) => {
       const ins = tx.insert(accountBalance).values(rows);
       await (snap
         ? ins.onConflictDoNothing()
@@ -132,8 +138,8 @@ export class LedgerBatch {
           }));
     });
 
-    for (const [accountId, patch] of this.accountPatches) {
-      await tx.update(account).set(patch).where(sql`${account.id} = ${accountId}`);
+    for (const accountId of [...this.accountPatches.keys()].sort((a, b) => a - b)) {
+      await tx.update(account).set(this.accountPatches.get(accountId)!).where(sql`${account.id} = ${accountId}`);
     }
 
     await chunked([...this.nftUpserts.values()], async (rows) => {
