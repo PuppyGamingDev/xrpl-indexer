@@ -170,10 +170,17 @@ live sync which catches up from the checkpoint to current.
   current and seeds the checkpoint.
 - **Resumable.** Kill it (PM2 restart, crash) and it continues from the persisted
   pass + marker.
-- **Speed depends on the node.** Point `XRPL_SNAPSHOT_ENDPOINTS` at your own Clio
-  — it returns 2048-entry `ledger_data` pages; public proxies cap around 75/page,
-  ~25× slower. On a dedicated Clio expect roughly 30–90 min for the whole walk;
-  on a throttled public endpoint, several hours. Runs once.
+- **Speed depends on admin access, not just Clio.** `ledger_data` for a
+  *non-admin* connection is capped at **256 objects/page** (rippled and Clio
+  both) — a full snapshot is then several hours. An **admin** connection lifts
+  that to 2048/page (~10× faster, ~30–90 min):
+  - run `--mode=snapshot` on the node's own box → `ws://127.0.0.1:<clio-port>`
+    is admin, or
+  - add the indexer box's IP to Clio's `dos_guard.whitelist` (whitelisted =
+    admin), or
+  - point `XRPL_SNAPSHOT_ENDPOINTS` at **rippled's admin WS port**
+    (`ws://<node-lan-ip>:6006`) — rippled keeps recent ledgers, which covers the
+    snapshot ledger.
 - `pnpm --filter @xrpl-indexer/indexer start -- --mode=snapshot` runs just the
   snapshot and exits.
 

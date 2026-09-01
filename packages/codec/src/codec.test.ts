@@ -3,6 +3,7 @@ import { addressToHex, hexToAddress } from "./address.ts";
 import { dropsToXrp, normalizeAmount, xrpToDrops } from "./amount.ts";
 import { currencyToString, isXrp, stringToCurrency } from "./currency.ts";
 import { cipherTaxon, parseNftId } from "./nft.ts";
+import { hexToUtf8, stripNul } from "./hex.ts";
 import { parseMptIssuanceId } from "./mpt.ts";
 import { dateToRippleTime, rippleTimeToIso } from "./time.ts";
 
@@ -99,5 +100,23 @@ describe("time", () => {
   it("maps the Ripple epoch", () => {
     expect(rippleTimeToIso(0)).toBe("2000-01-01T00:00:00.000Z");
     expect(dateToRippleTime(new Date("2000-01-01T00:00:00Z"))).toBe(0);
+  });
+});
+
+describe("NUL byte safety (Postgres cannot store U+0000)", () => {
+  const NUL = String.fromCharCode(0);
+  it("stripNul removes it", () => {
+    expect(stripNul("a" + NUL + "b" + NUL)).toBe("ab");
+    expect(stripNul("clean")).toBe("clean");
+  });
+  it("hexToUtf8 drops embedded NUL", () => {
+    expect(hexToUtf8("680069")).toBe("hi");           // 'h' NUL 'i'
+    expect(hexToUtf8("697066732e696f")).toBe("ipfs.io");
+  });
+  it("currencyToString never returns a NUL", () => {
+    // standard-form code with a NUL in the ISO slot -> falls back to hex
+    const weird = "0000000000000000000000004100420000000000";
+    const out = currencyToString(weird);
+    expect(out.includes(NUL)).toBe(false);
   });
 });

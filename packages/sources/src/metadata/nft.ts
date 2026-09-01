@@ -1,6 +1,7 @@
 import { UpstreamError } from "@xrpl-indexer/core/errors";
 import { safeFetch } from "../safe-fetch.ts";
 import { canonicalizeUri, parseDataUriJson, resolveForFetch, type GatewayConfig } from "../uri.ts";
+import { stripNul } from "@xrpl-indexer/codec";
 import { classifyMediaType, type MediaKind } from "./media-type.ts";
 
 export interface ParsedNftMetadata {
@@ -18,7 +19,9 @@ export interface ParsedNftMetadata {
 }
 
 function str(v: unknown): string | null {
-  return typeof v === "string" && v.trim() ? v.trim() : null;
+  if (typeof v !== "string") return null;
+  const s = stripNul(v).trim();
+  return s ? s : null;
 }
 
 function pickImage(j: Record<string, unknown>): string | null {

@@ -23,20 +23,25 @@ const PAGE_LIMIT = 2_048;
 const FLUSH_EVERY = 20_000;
 
 /**
- * ledger_data passes, in order. `account` (AccountRoot) runs last so AMM/Vault
- * pseudo-accounts are already known and their XRP reserves get recorded even
- * when INDEXER_TRACK_XRP_BALANCES is off.
+ * Two keyspace walks instead of one per entry type — a `ledger_data` `type`
+ * filter makes the node scan the whole keyspace *and* return a sparse page, so
+ * N typed passes = N full scans. Walk 1 (no filter) handles everything; walk 2
+ * (`type: account`, which stays dense) fills issuer/pool AccountRoot data once
+ * pseudo-accounts are known.
  */
-const PASSES: { type: string; entryType: string }[] = [
-  { type: "state", entryType: "RippleState" },
-  { type: "mpt_issuance", entryType: "MPTokenIssuance" },
-  { type: "mptoken", entryType: "MPToken" },
-  { type: "nft_page", entryType: "NFTokenPage" },
-  { type: "nft_offer", entryType: "NFTokenOffer" },
-  { type: "amm", entryType: "AMM" },
-  { type: "vault", entryType: "Vault" },
-  { type: "oracle", entryType: "Oracle" },
-  { type: "account", entryType: "AccountRoot" },
+const WALK1_TYPES = new Set([
+  "RippleState",
+  "MPTokenIssuance",
+  "MPToken",
+  "NFTokenPage",
+  "NFTokenOffer",
+  "AMM",
+  "Vault",
+  "Oracle",
+]);
+const WALKS: { name: string; ledgerDataType?: string }[] = [
+  { name: "walk1" },
+  { name: "walk2", ledgerDataType: "account" },
 ];
 
 export async function isSnapshotDone(db: Db): Promise<boolean> {
@@ -122,24 +127,23 @@ export async function runSnapshot(db: Db): Promise<void> {
     "state snapshot starting",
   );
 
-  for (const pass of PASSES) {
-    if (completed.has(pass.type)) continue;
+  for (const walk of WALKS) {
+    if (completed.has(walk.name)) continue;
     // Marker to fetch from next. On resume this is a boundary that WAS flushed,
     // so re-fetching from it re-processes nothing (or, if the kill landed
     // between flush and marker-write, one flush-batch, harmlessly — DO NOTHING).
     let marker: unknown =
-      st!.cursorType === pass.type && st!.cursorMarker ? JSON.parse(st!.cursorMarker) : undefined;
+      st!.cursorType === walk.name && st!.cursorMarker ? JSON.parse(st!.cursorMarker) : undefined;
 
-    // The AccountRoot pass would otherwise touch every ~6M accounts. We only
-    // need issuers (for `blackholed`/`domain`) and pool pseudo-accounts (for
-    // XRP reserve series) — everything else is skipped.
+    // walk2 only keeps AccountRoots for issuers (blackholed/domain) + pool
+    // pseudo-accounts (XRP reserve series) — the other ~6M are skipped.
     let issuerIds: Set<number> | undefined;
-    if (pass.entryType === "AccountRoot") {
+    if (walk.name === "walk2") {
       const rows = await db.execute<{ issuer_id: number }>(
         sql`select distinct issuer_id from token where issuer_id is not null`,
       );
       issuerIds = new Set([...rows].map((r) => Number(r.issuer_id)));
-      log.info({ issuers: issuerIds.size }, "AccountRoot pass limited to issuers + pool accounts");
+      log.info({ issuers: issuerIds.size }, "walk2: AccountRoots limited to issuers + pool accounts");
     }
 
     let batch = new LedgerBatch(snapshotLedger, { xrpTokenId, snapshot: true });
@@ -149,35 +153,39 @@ export async function runSnapshot(db: Db): Promise<void> {
     let done = false;
 
     const fetch = (m: unknown) =>
-      src.ledgerData({ ledgerIndex: snapshotLedger, type: pass.type, marker: m, limit: PAGE_LIMIT });
+      src.ledgerData({
+        ledgerIndex: snapshotLedger,
+        type: walk.ledgerDataType,
+        marker: m,
+        limit: PAGE_LIMIT,
+      });
     let pending = fetch(marker);
 
     while (!done) {
       const page = await pending;
       const nextMarker = page.marker;
       done = nextMarker === undefined;
-      // Kick off the next fetch before processing this page (overlaps network + DB).
-      if (!done) pending = fetch(nextMarker);
+      if (!done) pending = fetch(nextMarker); // overlap next fetch with processing
+
+      const wanted =
+        walk.name === "walk2"
+          ? page.state.filter((e) => {
+              if (e.LedgerEntryType !== "AccountRoot") return false;
+              const id = registry.cachedAccountId(String(e.Account));
+              return id !== undefined && (issuerIds!.has(id) || registry.isPseudo(id));
+            })
+          : page.state.filter((e) => WALK1_TYPES.has(e.LedgerEntryType));
+
       pages++;
       pagesSinceFlush++;
 
-      if (pass.entryType === "AccountRoot") {
-        for (const entry of page.state) {
-          if (entry.LedgerEntryType !== "AccountRoot") continue;
-          const id = registry.cachedAccountId(String(entry.Account));
-          if (id === undefined || !(issuerIds!.has(id) || registry.isPseudo(id))) continue;
-          await dispatch(entry, "AccountRoot", batch, registry, snapshotLedger);
-          total++;
-          sinceFlush++;
+      if (wanted.length > 0) {
+        if (walk.name === "walk1") {
+          await registry.bulkEnsureAccounts(pageAddresses(wanted), snapshotLedger);
+          await warmRippleStateTokens(wanted, registry, snapshotLedger);
         }
-      } else {
-        await registry.bulkEnsureAccounts(pageAddresses(page.state, pass.entryType), snapshotLedger);
-        if (pass.entryType === "RippleState") {
-          await warmRippleStateTokens(page.state, registry, snapshotLedger);
-        }
-        for (const entry of page.state) {
-          if (entry.LedgerEntryType !== pass.entryType) continue;
-          await dispatch(entry, pass.entryType, batch, registry, snapshotLedger);
+        for (const entry of wanted) {
+          await dispatch(entry, entry.LedgerEntryType, batch, registry, snapshotLedger);
           total++;
           sinceFlush++;
         }
@@ -191,17 +199,17 @@ export async function runSnapshot(db: Db): Promise<void> {
         await db
           .update(snapshotState)
           .set({
-            cursorType: pass.type,
+            cursorType: walk.name,
             cursorMarker: done ? null : JSON.stringify(nextMarker),
             entriesProcessed: total,
             updatedAt: new Date(),
           })
           .where(ONE);
-        log.info({ pass: pass.type, pages, total }, "snapshot progress");
+        log.info({ walk: walk.name, pages, total }, "snapshot progress");
       }
     }
 
-    completed.add(pass.type);
+    completed.add(walk.name);
     await db
       .update(snapshotState)
       .set({
@@ -212,7 +220,7 @@ export async function runSnapshot(db: Db): Promise<void> {
         updatedAt: new Date(),
       })
       .where(ONE);
-    log.info({ pass: pass.type, total }, "snapshot pass complete");
+    log.info({ walk: walk.name, total }, "snapshot walk complete");
   }
 
   await recomputeAllMetrics(db, snapshotLedger);
@@ -315,13 +323,12 @@ async function recomputeAllMetrics(db: Db, seq: number): Promise<void> {
   log.info("snapshot metric recompute complete");
 }
 
-/** Every account address the entries in a page will reference. */
-function pageAddresses(entries: LedgerDataEntry[], entryType: string): string[] {
+/** Every account address the entries will reference. */
+function pageAddresses(entries: LedgerDataEntry[]): string[] {
   const out: string[] = [];
   const asObj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : undefined);
   for (const e of entries) {
-    if (e.LedgerEntryType !== entryType) continue;
-    switch (entryType) {
+    switch (e.LedgerEntryType) {
       case "RippleState": {
         const lo = asObj(e.LowLimit)?.issuer;
         const hi = asObj(e.HighLimit)?.issuer;

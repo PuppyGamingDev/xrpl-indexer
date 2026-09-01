@@ -1,4 +1,4 @@
-import { fromHex, isHex } from "./hex.ts";
+import { fromHex, isHex, stripNul } from "./hex.ts";
 
 const XRP = "XRP";
 
@@ -12,8 +12,14 @@ export function isXrp(code: string): boolean {
  *  - 3-char ISO ("USD")               -> unchanged
  *  - 40-hex standard ISO form (00..)  -> the 3-char code
  *  - 40-hex non-standard              -> ASCII if fully printable, else the hex
+ *
+ * Guaranteed free of NUL bytes so the result is safe for Postgres text/jsonb.
  */
 export function currencyToString(code: string): string {
+  return stripNul(currencyToStringImpl(code));
+}
+
+function currencyToStringImpl(code: string): string {
   if (isXrp(code)) return XRP;
   if (code.length === 3) return code;
 
@@ -22,7 +28,7 @@ export function currencyToString(code: string): string {
     if (buf[0] === 0x00) {
       // standard form: ISO code sits in bytes 12..15
       const iso = buf.subarray(12, 15).toString("ascii").replace(/\0+$/, "");
-      return iso || code;
+      return isPrintable(iso) && iso.length > 0 ? iso : code.toUpperCase();
     }
     const trimmed = buf.subarray(0, indexOfTrailingZero(buf)).toString("utf8");
     return isPrintable(trimmed) && trimmed.length > 0 ? trimmed : code.toUpperCase();

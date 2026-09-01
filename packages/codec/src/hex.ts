@@ -17,9 +17,17 @@ export function isHex(s: string, bytes?: number): boolean {
   return bytes === undefined ? true : s.length === bytes * 2;
 }
 
-/** Decode a hex-encoded UTF-8 blob (e.g. NFToken.URI, AccountRoot.Domain). */
+/** Remove U+0000 which Postgres text and jsonb columns cannot store. */
+export function stripNul(s: string): string {
+  return s.indexOf("\u0000") === -1 ? s : s.replace(/\u0000/g, "");
+}
+
+/**
+ * Decode a hex-encoded UTF-8 blob (e.g. NFToken.URI, AccountRoot.Domain).
+ * NUL bytes are stripped because Postgres rejects them.
+ */
 export function hexToUtf8(hex: string): string {
-  return fromHex(hex).toString("utf8");
+  return stripNul(fromHex(hex).toString("utf8"));
 }
 
 export function utf8ToHex(s: string): string {
