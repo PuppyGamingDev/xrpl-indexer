@@ -62,6 +62,14 @@ const QUEUE_TUNING: Partial<Record<QueueName, PgBoss.Queue>> = {
     expireInSeconds: 1800,
     retentionMinutes: 30,
   },
+  // Same — a slow scan must not let the next cron fire stack another.
+  "discovery.scan": {
+    name: "discovery.scan",
+    policy: "singleton",
+    retryLimit: 0,
+    expireInSeconds: 1800,
+    retentionMinutes: 30,
+  },
 };
 
 /** Thin typed wrapper over pg-boss with our queue registry baked in. */

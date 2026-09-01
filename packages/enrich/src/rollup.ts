@@ -8,9 +8,10 @@ const log = createLogger("enrich.rollup");
 /** Recompute the denormalised stat tables + append a dashboard snapshot. */
 export async function runRollup(ctx: EnrichContext): Promise<void> {
   await ctx.db.transaction(async (db) => {
-    // Batch job over growing history tables — lift the 30s web timeout, and skip
+    // Batch job over growing history tables — raise the 30s web timeout, but
+    // keep it bounded so a bad plan aborts instead of running for 30 min. Skip
     // parallel workers (DSM pressure in the container's /dev/shm).
-    await db.execute(sql`set local statement_timeout = 0`);
+    await db.execute(sql`set local statement_timeout = '900s'`);
     await db.execute(sql`set local max_parallel_workers_per_gather = 0`);
 
     // token_stats — most of the ~1.75M IOU tokens are dead spam trustline pairs.

@@ -18,7 +18,7 @@ export interface DiscoveryOptions {
   retryErrorsAfterHours?: number;
   /** Only run the per-NFT fallback for issuers pulled more than this many hours ago. */
   catalogGraceHours?: number;
-  /** Don't re-pull a whole issuer catalog more often than this. */
+  /** Don't re-pull a whole issuer catalog more often than this (default 72h). */
   recatalogAfterHours?: number;
 }
 
@@ -32,10 +32,11 @@ async function scan<T extends Record<string, unknown>>(
   query: SqlQuery,
 ): Promise<T[]> {
   return ctx.db.transaction(async (tx) => {
-    await tx.execute(sql`set local statement_timeout = 0`);
-    // These scans return at most a few hundred rows (LIMIT) — no gain from
-    // parallel workers, and they allocate DSM segments in the container's small
-    // /dev/shm.
+    // Bounded — generous for a batch scan, but a pathological plan must abort,
+    // not run for 30 min and let the next cron fire stack behind it.
+    await tx.execute(sql`set local statement_timeout = '120s'`);
+    // No gain from parallel workers on a LIMIT scan; they also allocate DSM in
+    // the container's small /dev/shm.
     await tx.execute(sql`set local max_parallel_workers_per_gather = 0`);
     return (await tx.execute<T>(query)) as unknown as T[];
   });
@@ -52,31 +53,25 @@ export async function runDiscovery(
   const tokenBatch = opts.tokenBatch ?? 200;
   const retryH = opts.retryErrorsAfterHours ?? 24;
   const graceH = opts.catalogGraceHours ?? 1;
-  const recatalogH = opts.recatalogAfterHours ?? 12;
+  const recatalogH = opts.recatalogAfterHours ?? 72;
   const hasCatalog = ctx.providers.nftCatalog.length > 0;
 
   if (kinds.includes("nft") && hasCatalog) {
-    // Primary path: one bulk Bithomp catalog pull per issuer that still has
-    // un-enriched NFTs and hasn't been pulled in the last `recatalogH` hours.
-    // Driven off the small `nft_collection` table (one row per issuer+taxon),
-    // not a full `nft` aggregate.
+    // Primary path: bulk Bithomp catalog pull per NFT-issuing account not pulled
+    // in the last `recatalogH` hours. Deliberately does NOT check per-NFT
+    // metadata coverage — that's an anti-join over millions of `nft` rows per
+    // scan; `issuer_catalog` recency is the throttle, and each pull re-covers
+    // the whole issuer (new mints, changed metadata, burns) anyway.
     const rows = await scan<{ issuer: string }>(
       ctx,
       sql`
-        select distinct a.address as issuer
-        from nft_collection c
-        join account a on a.id = c.issuer_id
-        where not exists (
+        select a.address as issuer
+        from account a
+        where exists (select 1 from nft n where n.issuer_id = a.id)
+          and not exists (
             select 1 from issuer_catalog ic
-            where ic.issuer_id = c.issuer_id
+            where ic.issuer_id = a.id
               and ic.pulled_at > now() - (${recatalogH} || ' hours')::interval
-          )
-          and exists (
-            select 1 from nft n
-            left join nft_meta m on m.nft_token_id = n.token_id
-            where n.issuer_id = c.issuer_id and n.live
-              and (m.nft_token_id is null
-                   or (m.error is not null and m.fetched_at < now() - (${retryH} || ' hours')::interval))
           )
         limit ${issuerBatch}
       `,
