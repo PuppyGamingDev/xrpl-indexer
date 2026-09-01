@@ -80,15 +80,15 @@ export default async function OverviewPage() {
           <div className="space-y-4">
             <div>
               <div className="mb-1 text-xs text-muted">Indexed ledger</div>
-              <Sparkline data={series("latest_seq")} color="var(--color-viz-1)" />
+              <Sparkline data={series("latest_seq")} color="var(--color-viz-1)" label="Ledger" />
             </div>
             <div>
               <div className="mb-1 text-xs text-muted">NFTs enriched</div>
-              <Sparkline data={series("nfts_with_meta")} color="var(--color-viz-2)" />
+              <Sparkline data={series("nfts_with_meta")} color="var(--color-viz-2)" label="NFTs enriched" />
             </div>
             <div>
               <div className="mb-1 text-xs text-muted">Tokens enriched</div>
-              <Sparkline data={series("tokens_with_meta")} color="var(--color-viz-3)" />
+              <Sparkline data={series("tokens_with_meta")} color="var(--color-viz-3)" label="Tokens enriched" />
             </div>
           </div>
         </Panel>

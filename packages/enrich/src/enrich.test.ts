@@ -15,7 +15,6 @@ function fakeInsert() {
 
 describe("runDiscovery", () => {
   it("enqueues one nft.collection per issuer, keyed by address", async () => {
-    const enqueued: { queue: string; rows: { data: unknown; key?: string }[] }[] = [];
     // scan() does execute(set timeout), execute(set parallel), execute(query) —
     // so the real discovery queries land on calls 3, 6, 9 (issuers, nft, token).
     let calls = 0;
@@ -24,42 +23,38 @@ describe("runDiscovery", () => {
       if (calls === 3) return [{ issuer: "rA" }, { issuer: "rB" }];
       return [];
     });
+    const enqueue = vi.fn<(...a: unknown[]) => Promise<undefined>>(async () => undefined);
     const ctx = {
       db: {
         transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb({ execute: txExecute })),
         execute: txExecute,
       },
-      jobs: {
-        enqueueMany: vi.fn(async (queue: string, rows: { data: unknown; key?: string }[]) => {
-          enqueued.push({ queue, rows });
-        }),
-      },
+      jobs: { enqueue, enqueueMany: vi.fn(async () => undefined) },
       providers: { nftCatalog: [{}], tokenInfo: [], tokenCatalog: [] },
     } as unknown as EnrichContext;
 
     await runDiscovery(ctx, ["nft", "token"]);
 
-    const coll = enqueued.find((e) => e.queue === "nft.collection")!;
-    expect(coll.rows).toEqual([
-      { data: { issuer: "rA" }, key: "issuer:rA" },
-      { data: { issuer: "rB" }, key: "issuer:rB" },
+    expect(enqueue.mock.calls).toEqual([
+      ["nft.collection", { issuer: "rA" }, { key: "issuer:rA" }],
+      ["nft.collection", { issuer: "rB" }, { key: "issuer:rB" }],
     ]);
   });
 
   it("skips the bulk path when no NFT catalog provider is configured", async () => {
-    const enqueued: string[] = [];
+    const enqueue = vi.fn<(...a: unknown[]) => Promise<undefined>>(async () => undefined);
     const exec = vi.fn(async () => []);
     const ctx = {
       db: {
         execute: exec,
         transaction: vi.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb({ execute: exec })),
       },
-      jobs: { enqueueMany: vi.fn(async (q: string) => void enqueued.push(q)) },
+      jobs: { enqueue, enqueueMany: vi.fn(async () => undefined) },
       providers: { nftCatalog: [], tokenInfo: [], tokenCatalog: [] },
     } as unknown as EnrichContext;
 
     await runDiscovery(ctx, ["nft"]);
-    expect(enqueued).not.toContain("nft.collection");
+    expect(enqueue.mock.calls.some((c) => c[0] === "nft.collection")).toBe(false);
   });
 });
 

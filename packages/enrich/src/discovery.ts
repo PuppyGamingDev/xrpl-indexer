@@ -76,10 +76,11 @@ export async function runDiscovery(
         limit ${issuerBatch}
       `,
     );
-    await ctx.jobs.enqueueMany(
-      "nft.collection",
-      rows.map((r) => ({ data: { issuer: r.issuer }, key: `issuer:${r.issuer}` })),
-    );
+    // one-by-one via send() so the `stately` singleton key is actually enforced
+    // (bulk insert() does not reliably dedupe on the stately partial index).
+    for (const r of rows) {
+      await ctx.jobs.enqueue("nft.collection", { issuer: r.issuer }, { key: `issuer:${r.issuer}` });
+    }
     log.info({ enqueued: rows.length }, "nft.collection discovery");
   }
 

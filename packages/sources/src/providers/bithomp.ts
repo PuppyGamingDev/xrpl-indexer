@@ -80,7 +80,8 @@ export class BithompProvider implements NftCatalogProvider {
       const res = await safeFetch<Record<string, unknown>>(url, {
         as: "json",
         headers: { "x-bithomp-token": this.opts.apiKey },
-        timeoutMs: 20_000,
+        timeoutMs: 45_000,
+        maxBytes: 48 * 1024 * 1024, // 1000 NFTs w/ inline metadata can be large
       });
       if (res.status === 429) {
         if (attempt >= MAX_429_RETRIES) throw new Error("bithomp: rate limited, retries exhausted");

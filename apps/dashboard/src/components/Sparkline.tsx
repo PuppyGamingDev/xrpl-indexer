@@ -7,14 +7,28 @@ export interface SparkPoint {
   y: number;
 }
 
+const fmtTime = (v: number | string): string => {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return String(v);
+  return new Date(n).toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
 export function Sparkline({
   data,
   color = "var(--color-viz-1)",
   height = 64,
+  label = "value",
 }: {
   data: SparkPoint[];
   color?: string;
   height?: number;
+  /** Series name shown in the tooltip next to the value. */
+  label?: string;
 }) {
   if (!data.length) return <div className="text-xs text-muted">no data yet</div>;
   const id = `spark-${Math.random().toString(36).slice(2)}`;
@@ -38,6 +52,8 @@ export function Sparkline({
               fontSize: 12,
             }}
             labelStyle={{ color: "#7a8aa0" }}
+            labelFormatter={fmtTime}
+            formatter={(v: number | string) => [Number(v).toLocaleString(), label]}
           />
           <Area type="monotone" dataKey="y" stroke={color} strokeWidth={1.5} fill={`url(#${id})`} />
         </AreaChart>

@@ -33,9 +33,10 @@ export interface WorkerConcurrency {
 
 const BUILTIN: Record<string, number> = {
   "nft.metadata": 8,
-  // 1: whole-catalog streamers that insert `nft` stubs (FK-locks `account`
-  // rows) — keeping it single-writer avoids deadlocks with live sync.
-  "nft.collection": 1,
+  // Whole-issuer catalog streamers. They insert `nft` stubs (FK-locks `account`
+  // rows) but only via `on conflict do nothing`, and in practice haven't
+  // deadlocked with live sync — 4 in parallel to actually drain 13k issuers.
+  "nft.collection": 4,
   "token.metadata": 4,
 };
 
