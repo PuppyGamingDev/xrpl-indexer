@@ -11,6 +11,26 @@ export function parsePage(q: { limit?: unknown; offset?: unknown }, def = 25, ma
   return { limit, offset };
 }
 
+export interface ListParams extends Page {
+  sortBy: string;
+  order: "asc" | "desc";
+}
+
+/** Pagination + a whitelisted sort column + direction, for list endpoints. */
+export function parseList(
+  q: Record<string, unknown>,
+  opts: { sortable: readonly string[]; defaultSort: string; def?: number; max?: number },
+): ListParams {
+  const page = parsePage(q, opts.def ?? 25, opts.max ?? 200);
+  const sortBy = opts.sortable.includes(String(q.sortBy)) ? String(q.sortBy) : opts.defaultSort;
+  const order = String(q.order).toLowerCase() === "asc" ? "asc" : "desc";
+  return { ...page, sortBy, order };
+}
+
+/** `<dir> nulls last` fragment for an `order by`. */
+export const orderDir = (order: "asc" | "desc") =>
+  order === "asc" ? sql`asc nulls last` : sql`desc nulls last`;
+
 export async function currentLedger(db: Db): Promise<{ sequence: number; closeTime: string } | null> {
   const [row] = await db.execute<{ sequence: number; close_time: string }>(
     sql`select sequence, close_time from ledger order by sequence desc limit 1`,

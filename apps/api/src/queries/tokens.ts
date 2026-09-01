@@ -1,7 +1,7 @@
 import { currencyToString } from "@xrpl-indexer/codec";
 import { NotFoundError } from "@xrpl-indexer/core/errors";
 import { type Db, sql } from "@xrpl-indexer/db";
-import { lastPriceXrp, metricAsOf, type Page, sampleSequence } from "./common.ts";
+import { lastPriceXrp, type ListParams, metricAsOf, orderDir, type Page, sampleSequence } from "./common.ts";
 
 export interface TokenRef {
   id: number;
@@ -179,39 +179,89 @@ export async function getMetricSeries(
   return { metric, series };
 }
 
-export interface ListTokensParams extends Page {
-  sortBy: "holders" | "trustlines" | "supply" | "priceXrp";
+export const TOKEN_SORTS = [
+  "holders",
+  "trustlines",
+  "supply",
+  "marketcap",
+  "volume24h",
+  "volume7d",
+  "trades24h",
+  "age",
+  "name",
+] as const;
+
+export interface ListTokensParams extends ListParams {
+  /** matches token_meta.name, currency code, or exact issuer address */
+  search?: string;
   issuer?: string;
-  nameLike?: string;
+  type?: "IOU" | "MPT";
+  verified?: boolean;
 }
 
-export async function listTokens(db: Db, p: ListTokensParams): Promise<unknown[]> {
+export interface ListTokensResult extends ListParams {
+  total: number;
+  tokens: Record<string, unknown>[];
+}
+
+export async function listTokens(db: Db, p: ListTokensParams): Promise<ListTokensResult> {
   const sortCol =
     p.sortBy === "trustlines"
       ? sql`coalesce(th.value, 0)`
       : p.sortBy === "supply"
-        ? sql`coalesce(ts.value, 0)`
-        : sql`coalesce(thold.value, 0)`;
+        ? sql`coalesce(tsup.value, 0)`
+        : p.sortBy === "marketcap"
+          ? sql`coalesce(st.marketcap, 0)`
+          : p.sortBy === "volume24h"
+            ? sql`coalesce(st.volume_24h, 0)`
+            : p.sortBy === "volume7d"
+              ? sql`coalesce(st.volume_7d, 0)`
+              : p.sortBy === "trades24h"
+                ? sql`coalesce(st.exchanges_24h, 0)`
+                : p.sortBy === "age"
+                  ? sql`t.first_seen_ledger`
+                  : p.sortBy === "name"
+                    ? sql`lower(tm.name)`
+                    : sql`coalesce(thold.value, 0)`;
 
-  const rows = await db.execute(sql`
+  const s = p.search?.trim();
+  const like = s ? `%${s}%` : "";
+  // Dead spam trustline pairs have no token_stats row and no metadata — hide
+  // them from an unfiltered browse so the sort + count stay cheap.
+  const browseOnly = !s && !p.issuer;
+
+  const rows = await db.execute<Record<string, unknown> & { total: number }>(sql`
     select
-      t.id, t.token_type, t.currency, t.mpt_issuance_id,
+      t.id, t.token_type, t.currency, t.mpt_issuance_id, t.first_seen_ledger,
       a.address as issuer, a.blackholed, a.pseudo,
-      tm.name, tm.icon_uri, tm.trust_level,
-      coalesce(thold.value, 0)::text as holders,
-      coalesce(th.value, 0)::text    as trustlines,
-      coalesce(ts.value, 0)::text    as supply
+      tm.name, tm.icon_uri, tm.trust_level, tm.domain,
+      coalesce(thold.value, 0)::text  as holders,
+      coalesce(th.value, 0)::text     as trustlines,
+      coalesce(tsup.value, 0)::text   as supply,
+      coalesce(st.marketcap, 0)::text as marketcap,
+      coalesce(st.volume_24h, 0)::text as volume_24h,
+      coalesce(st.volume_7d, 0)::text  as volume_7d,
+      coalesce(st.exchanges_24h, 0)    as trades_24h,
+      count(*) over()::int as total
     from token t
     join account a on a.id = t.issuer_id
     left join lateral (select value from token_holders     where token_id = t.id order by ledger_seq desc limit 1) thold on true
     left join lateral (select value from token_trustlines  where token_id = t.id order by ledger_seq desc limit 1) th on true
-    left join lateral (select value from token_supply      where token_id = t.id order by ledger_seq desc limit 1) ts on true
-    left join token_meta tm on tm.token_id = t.id
+    left join lateral (select value from token_supply      where token_id = t.id order by ledger_seq desc limit 1) tsup on true
+    left join token_meta  tm on tm.token_id = t.id
+    left join token_stats st on st.token_id = t.id
     where t.token_type <> 'XRP'
+      ${browseOnly ? sql`and st.token_id is not null` : sql``}
+      ${p.type ? sql`and t.token_type = ${p.type}` : sql``}
       ${p.issuer ? sql`and a.address = ${p.issuer}` : sql``}
-      ${p.nameLike ? sql`and tm.name ilike ${"%" + p.nameLike + "%"}` : sql``}
-    order by ${sortCol} desc nulls last
+      ${p.verified ? sql`and coalesce(tm.trust_level, 0) >= 2` : sql``}
+      ${s ? sql`and (tm.name ilike ${like} or t.currency ilike ${like} or a.address = ${s})` : sql``}
+    order by ${sortCol} ${orderDir(p.order)}, t.id
     limit ${p.limit} offset ${p.offset}
   `);
-  return [...rows];
+
+  const list = [...rows];
+  const total = list[0]?.total ?? 0;
+  for (const r of list) delete (r as { total?: number }).total;
+  return { sortBy: p.sortBy, order: p.order, limit: p.limit, offset: p.offset, total, tokens: list };
 }

@@ -24,14 +24,46 @@ export interface TokenRow {
   token_type: "IOU" | "MPT";
   currency: string | null;
   mpt_issuance_id: string | null;
+  first_seen_ledger: number;
   issuer: string;
   blackholed: boolean;
   name: string | null;
   icon_uri: string | null;
   trust_level: number | null;
+  domain: string | null;
   holders: string;
   trustlines: string;
   supply: string;
+  marketcap: string;
+  volume_24h: string;
+  volume_7d: string;
+  trades_24h: number;
+}
+
+export interface CollectionRow {
+  id: string;
+  issuer: string;
+  taxon: string;
+  first_seen_ledger: number;
+  name: string | null;
+  image_uri: string | null;
+  supply: number;
+  holders: number;
+  floor: string | null;
+  volume_24h: string;
+  volume_7d: string;
+  volume_all: string;
+  trades_24h: number;
+  trades_7d: number;
+  live_supply: number;
+}
+
+export interface ListResponse {
+  sortBy: string;
+  order: "asc" | "desc";
+  limit: number;
+  offset: number;
+  total: number;
 }
 
 export interface QueueDepths {

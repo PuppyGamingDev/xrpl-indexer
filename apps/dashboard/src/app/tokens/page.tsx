@@ -1,63 +1,33 @@
-import Link from "next/link";
-import { Panel, Table } from "@/components/ui";
+import { Panel } from "@/components/ui";
 import { api } from "@/lib/api";
-import { num, shortAddr } from "@/lib/format";
-import type { TokenRow } from "@/lib/types";
+import { readListState, toApiQuery } from "@/lib/list";
+import type { ListResponse, TokenRow } from "@/lib/types";
+import { TokensTable } from "./TokensTable";
 
 export const dynamic = "force-dynamic";
 
-const SORTS = ["holders", "trustlines", "supply"] as const;
+const PAGE_SIZE = 50;
 
 export default async function TokensPage({
   searchParams,
 }: {
-  searchParams: Promise<{ sortBy?: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { sortBy = "holders" } = await searchParams;
-  const { tokens } = await api<{ tokens: TokenRow[] }>(`/tokens?limit=100&sortBy=${sortBy}`);
+  const state = readListState(await searchParams, {
+    defaultSort: "holders",
+    extraKeys: ["type", "verified"],
+  });
+  const query = toApiQuery(state, PAGE_SIZE, { verified: "verified", type: "type" });
+  const res = await api<ListResponse & { tokens: TokenRow[] }>(`/tokens?${query}`);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-baseline justify-between">
         <h1 className="text-xl font-semibold">Tokens</h1>
-        <div className="flex gap-2 text-sm">
-          {SORTS.map((s) => (
-            <Link
-              key={s}
-              href={`/tokens?sortBy=${s}`}
-              className={`rounded px-2 py-1 ${s === sortBy ? "bg-viz-1 text-black" : "text-muted hover:text-white"}`}
-            >
-              {s}
-            </Link>
-          ))}
-        </div>
+        <span className="text-sm tabular-nums text-muted">{res.total.toLocaleString()} total</span>
       </div>
-
       <Panel>
-        <Table head={["Token", "Issuer", "Holders", "Trustlines", "Supply", "Trust"]}>
-          {tokens.map((t) => {
-            const label = t.name ?? t.currency ?? t.mpt_issuance_id?.slice(0, 12) ?? "—";
-            const href =
-              t.token_type === "MPT"
-                ? `/tokens/mpt:${t.mpt_issuance_id}`
-                : `/tokens/${t.issuer}:${t.currency}`;
-            return (
-              <tr key={t.id} className="hover:bg-white/5">
-                <td className="py-2 pr-4">
-                  <Link href={href} className="text-viz-1 hover:underline">
-                    {label}
-                  </Link>
-                  <span className="ml-2 text-xs text-muted">{t.token_type}</span>
-                </td>
-                <td className="py-2 pr-4 font-mono text-xs text-muted">{shortAddr(t.issuer)}</td>
-                <td className="py-2 pr-4 tabular-nums">{num(t.holders)}</td>
-                <td className="py-2 pr-4 tabular-nums">{num(t.trustlines)}</td>
-                <td className="py-2 pr-4 tabular-nums">{num(t.supply, 2)}</td>
-                <td className="py-2 pr-4 tabular-nums">{t.trust_level ?? 0}</td>
-              </tr>
-            );
-          })}
-        </Table>
+        <TokensTable rows={res.tokens} total={res.total} state={state} pageSize={PAGE_SIZE} />
       </Panel>
     </div>
   );

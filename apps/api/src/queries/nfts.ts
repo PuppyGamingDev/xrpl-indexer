@@ -1,7 +1,7 @@
 import { NotFoundError } from "@xrpl-indexer/core/errors";
 import { type Db, sql } from "@xrpl-indexer/db";
 import { config } from "../config.ts";
-import type { Page } from "./common.ts";
+import { type ListParams, orderDir, type Page } from "./common.ts";
 
 function resolveGatewayUri(uri: string | null): string | null {
   if (!uri) return null;
@@ -80,32 +80,79 @@ export async function getNftImage(db: Db, tokenId: string): Promise<unknown> {
   };
 }
 
-export interface ListCollectionsParams extends Page {
-  sortBy: "supply" | "holders" | "trades";
-  nameLike?: string;
+export const COLLECTION_SORTS = [
+  "supply",
+  "holders",
+  "volume24h",
+  "volume7d",
+  "volumeAll",
+  "trades24h",
+  "trades7d",
+  "age",
+  "name",
+] as const;
+
+export interface ListCollectionsParams extends ListParams {
+  /** matches nft_collection_stats.name or exact issuer address */
+  search?: string;
+  issuer?: string;
+  namedOnly?: boolean;
 }
 
-export async function listCollections(db: Db, p: ListCollectionsParams): Promise<unknown[]> {
+export interface ListCollectionsResult extends ListParams {
+  total: number;
+  collections: Record<string, unknown>[];
+}
+
+export async function listCollections(db: Db, p: ListCollectionsParams): Promise<ListCollectionsResult> {
   const sortCol =
     p.sortBy === "holders"
       ? sql`coalesce(cs.holders, 0)`
-      : p.sortBy === "trades"
-        ? sql`coalesce(cs.trades_24h, 0)`
-        : sql`live_supply`;
-  const rows = await db.execute(sql`
+      : p.sortBy === "volume24h"
+        ? sql`coalesce(cs.volume_24h, 0)`
+        : p.sortBy === "volume7d"
+          ? sql`coalesce(cs.volume_7d, 0)`
+          : p.sortBy === "volumeAll"
+            ? sql`coalesce(cs.volume_all, 0)`
+            : p.sortBy === "trades24h"
+              ? sql`coalesce(cs.trades_24h, 0)`
+              : p.sortBy === "trades7d"
+                ? sql`coalesce(cs.trades_7d, 0)`
+                : p.sortBy === "age"
+                  ? sql`c.first_seen_ledger`
+                  : p.sortBy === "name"
+                    ? sql`lower(cs.name)`
+                    : sql`coalesce(cs.supply, 0)`;
+
+  const s = p.search?.trim();
+  const rows = await db.execute<Record<string, unknown> & { total: number }>(sql`
     select
       c.id, iss.address as issuer, c.taxon, c.first_seen_ledger,
-      cs.name, cs.image_uri, cs.holders, cs.floor::text as floor,
-      cs.volume_24h::text as volume_24h, cs.volume_all::text as volume_all, cs.trades_24h,
-      (select count(*) from nft n where n.collection_id = c.id and n.live)::int as live_supply
+      cs.name, cs.image_uri,
+      coalesce(cs.supply, 0)  as supply,
+      coalesce(cs.holders, 0) as holders,
+      cs.floor::text        as floor,
+      cs.volume_24h::text   as volume_24h,
+      cs.volume_7d::text    as volume_7d,
+      cs.volume_all::text   as volume_all,
+      cs.trades_24h, cs.trades_7d,
+      (select count(*) from nft n where n.collection_id = c.id and n.live)::int as live_supply,
+      count(*) over()::int as total
     from nft_collection c
     join account iss on iss.id = c.issuer_id
     left join nft_collection_stats cs on cs.collection_id = c.id
-    where 1=1 ${p.nameLike ? sql`and cs.name ilike ${"%" + p.nameLike + "%"}` : sql``}
-    order by ${sortCol} desc nulls last
+    where 1=1
+      ${p.issuer ? sql`and iss.address = ${p.issuer}` : sql``}
+      ${p.namedOnly ? sql`and cs.name is not null` : sql``}
+      ${s ? sql`and (cs.name ilike ${"%" + s + "%"} or iss.address = ${s})` : sql``}
+    order by ${sortCol} ${orderDir(p.order)}, c.id
     limit ${p.limit} offset ${p.offset}
   `);
-  return [...rows];
+
+  const list = [...rows];
+  const total = list[0]?.total ?? 0;
+  for (const r of list) delete (r as { total?: number }).total;
+  return { sortBy: p.sortBy, order: p.order, limit: p.limit, offset: p.offset, total, collections: list };
 }
 
 export async function getCollection(db: Db, issuer: string, taxon: number): Promise<unknown> {

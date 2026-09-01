@@ -7,9 +7,16 @@ import { responseCache } from "./cache.ts";
 import { getApiDb } from "./db.ts";
 import { accountHoldings, accountNfts } from "./queries/accounts.ts";
 import { createApiKey, listApiKeys, patchApiKey, revokeApiKey } from "./queries/admin.ts";
-import { parsePage } from "./queries/common.ts";
+import { parseList, parsePage } from "./queries/common.ts";
 import { listAmm, listOracles, listVaults } from "./queries/defi.ts";
-import { getCollection, getNft, getNftImage, listCollectionNfts, listCollections } from "./queries/nfts.ts";
+import {
+  COLLECTION_SORTS,
+  getCollection,
+  getNft,
+  getNftImage,
+  listCollectionNfts,
+  listCollections,
+} from "./queries/nfts.ts";
 import { getServerStats, getStatsHistory } from "./queries/stats.ts";
 import {
   getMetricSeries,
@@ -17,8 +24,11 @@ import {
   getTokenHolders,
   listTokens,
   resolveToken,
+  TOKEN_SORTS,
   type MetricName,
 } from "./queries/tokens.ts";
+
+const bool = (v: unknown) => v === "true" || v === "1";
 
 const METRICS: MetricName[] = ["price", "trustlines", "holders", "supply", "marketcap"];
 
@@ -55,16 +65,16 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   // ---- tokens ----
   app.get("/tokens", s("tokens"), async (req) => {
     const q = req.query as Record<string, string>;
-    const page = parsePage(q);
-    const sortBy = (["holders", "trustlines", "supply", "priceXrp"].includes(q.sortBy ?? "")
-      ? q.sortBy
-      : "holders") as "holders" | "trustlines" | "supply" | "priceXrp";
-    return cached(`tokens:${JSON.stringify({ q, page })}`, ttl, () =>
-      listTokens(db, { ...page, sortBy, issuer: q.issuer, nameLike: q.nameLike }).then((tokens) => ({
-        sortBy,
-        ...page,
-        tokens,
-      })),
+    const p = parseList(q, { sortable: TOKEN_SORTS, defaultSort: "holders", max: 200 });
+    const type = q.type === "IOU" || q.type === "MPT" ? q.type : undefined;
+    return cached(`tokens:${JSON.stringify({ q, p })}`, ttl, () =>
+      listTokens(db, {
+        ...p,
+        search: q.search ?? q.nameLike,
+        issuer: q.issuer,
+        type,
+        verified: bool(q.verified),
+      }),
     );
   });
 
@@ -138,17 +148,14 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   });
   app.get("/collections", s("nfts"), async (req) => {
     const q = req.query as Record<string, string>;
-    const page = parsePage(q);
-    const sortBy = (["supply", "holders", "trades"].includes(q.sortBy ?? "") ? q.sortBy : "supply") as
-      | "supply"
-      | "holders"
-      | "trades";
-    return cached(`cols:${JSON.stringify({ q, page })}`, ttl, () =>
-      listCollections(db, { ...page, sortBy, nameLike: q.nameLike }).then((collections) => ({
-        sortBy,
-        ...page,
-        collections,
-      })),
+    const p = parseList(q, { sortable: COLLECTION_SORTS, defaultSort: "supply", max: 200 });
+    return cached(`cols:${JSON.stringify({ q, p })}`, ttl, () =>
+      listCollections(db, {
+        ...p,
+        search: q.search ?? q.nameLike,
+        issuer: q.issuer,
+        namedOnly: bool(q.namedOnly),
+      }),
     );
   });
   app.get("/collections/:issuer/:taxon", s("nfts"), async (req) => {
