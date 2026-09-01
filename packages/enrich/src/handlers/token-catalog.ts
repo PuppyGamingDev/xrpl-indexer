@@ -45,10 +45,19 @@ export async function handleTokenCatalog(_data: unknown, ctx: EnrichContext): Pr
   }
   log.info({ indexed: index.size }, "token catalog: matching against indexed tokens");
 
-  const tokenBuf: TokenMetaRow[] = [];
+  // Keyed by token_id / account_id — xrplmeta can list the same pair more than
+  // once across pages, and a batch upsert must not name the same row twice.
+  const tokenBuf = new Map<number, TokenMetaRow>();
   const issuerBuf = new Map<number, IssuerMetaRow>();
   let matched = 0;
   let scanned = 0;
+
+  const flush = async (): Promise<void> => {
+    await flushTokens(ctx, [...tokenBuf.values()]);
+    await flushIssuers(ctx, [...issuerBuf.values()]);
+    tokenBuf.clear();
+    issuerBuf.clear();
+  };
 
   for await (const { token, issuer } of provider.fetchAllTokens()) {
     scanned++;
@@ -56,17 +65,12 @@ export async function handleTokenCatalog(_data: unknown, ctx: EnrichContext): Pr
     if (!hit) continue;
     matched++;
 
-    tokenBuf.push(tokenRow(hit.tokenId, token));
+    tokenBuf.set(hit.tokenId, tokenRow(hit.tokenId, token));
     if (issuer) issuerBuf.set(hit.accountId, issuerRow(hit.accountId, issuer));
 
-    if (tokenBuf.length >= FLUSH_EVERY) {
-      await flushTokens(ctx, tokenBuf.splice(0));
-      await flushIssuers(ctx, [...issuerBuf.values()]);
-      issuerBuf.clear();
-    }
+    if (tokenBuf.size >= FLUSH_EVERY) await flush();
   }
-  await flushTokens(ctx, tokenBuf);
-  await flushIssuers(ctx, [...issuerBuf.values()]);
+  await flush();
 
   log.info({ scanned, matched }, "token catalog complete");
 }
