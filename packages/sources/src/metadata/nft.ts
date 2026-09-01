@@ -1,4 +1,5 @@
 import { UpstreamError } from "@xrpl-indexer/core/errors";
+import { throttle } from "../ratelimit.ts";
 import { safeFetch } from "../safe-fetch.ts";
 import { canonicalizeUri, parseDataUriJson, resolveForFetch, type GatewayConfig } from "../uri.ts";
 import { stripNul } from "@xrpl-indexer/codec";
@@ -75,6 +76,10 @@ export function parseNftMetadata(json: unknown): ParsedNftMetadata {
 
 export interface FetchNftMetadataOptions extends GatewayConfig {
   rotation?: number;
+  /** Global cap on gateway requests/minute (shared key "ipfs"). 0 / omit = off. */
+  ipfsRpm?: number;
+  /** Per-request timeout for each gateway attempt (ms). Default 8000. */
+  timeoutMs?: number;
 }
 
 /**
@@ -99,7 +104,8 @@ export async function fetchNftMetadata(
   let lastErr: unknown;
   for (const url of candidates) {
     try {
-      const res = await safeFetch<unknown>(url, { as: "json" });
+      if (opts.ipfsRpm) await throttle("ipfs", opts.ipfsRpm);
+      const res = await safeFetch<unknown>(url, { as: "json", timeoutMs: opts.timeoutMs ?? 8000 });
       if (res.status >= 200 && res.status < 300) return parseNftMetadata(res.data);
       lastErr = new UpstreamError(`HTTP ${res.status} from ${url}`);
     } catch (err) {

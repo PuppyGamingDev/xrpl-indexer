@@ -33,7 +33,19 @@ export async function handleTokenMetadata(
       log.debug({ err, provider: p.name }, "token provider failed");
     }
   }
-  if (!best) return;
+  if (!best) {
+    // Record the miss so discovery's `token_meta IS NULL` predicate stops
+    // re-enqueuing this token every scan. The trimmed fallback query re-checks
+    // error rows on its own cadence.
+    await ctx.db
+      .insert(tokenMeta)
+      .values({ tokenId: data.tokenId, source: "xrplmeta", error: "no provider data", fetchedAt: new Date() })
+      .onConflictDoUpdate({
+        target: tokenMeta.tokenId,
+        set: { error: sql`excluded.error`, fetchedAt: sql`now()` },
+      });
+    return;
+  }
 
   await ctx.db
     .insert(tokenMeta)
@@ -63,18 +75,8 @@ export async function handleTokenMetadata(
         fetchedAt: sql`now()`,
       },
     });
-
-  // opportunistically enrich the issuer too
-  const [acct] = await ctx.db.execute<{ id: number }>(sql`
-    select id from account where address = ${row.issuer}
-  `);
-  if (acct) {
-    await ctx.jobs.enqueue(
-      "issuer.metadata",
-      { accountId: acct.id, address: row.issuer },
-      { key: `issuer:${acct.id}` },
-    );
-  }
+  // Issuer metadata is filled in bulk by the `token.catalog` job (xrplmeta
+  // returns issuer info alongside every token), so no per-token issuer enqueue.
   void issuerMeta;
 }
 

@@ -15,6 +15,46 @@ export type JobHandler<N extends QueueName> = (
   job: PgBoss.Job<JobPayloads[N]>,
 ) => Promise<void>;
 
+/**
+ * Per-queue tuning applied on start (only when `ensureQueues`). `stately` makes
+ * `singletonKey` actually enforce "one live job per key" (the default `standard`
+ * policy silently ignores it), which is what stops discovery re-flooding the
+ * queue with duplicates every scan. Short retention frees keys again quickly;
+ * the error-retry cadence is gated by `*_meta.error` / `fetched_at` in SQL, not
+ * by pg-boss.
+ */
+const QUEUE_TUNING: Partial<Record<QueueName, PgBoss.Queue>> = {
+  "nft.metadata": {
+    name: "nft.metadata",
+    policy: "stately",
+    retryLimit: 2,
+    retryBackoff: true,
+    expireInSeconds: 300,
+    retentionMinutes: 60,
+  },
+  "token.metadata": {
+    name: "token.metadata",
+    policy: "stately",
+    retryLimit: 2,
+    expireInSeconds: 120,
+    retentionMinutes: 60,
+  },
+  "nft.collection": {
+    name: "nft.collection",
+    policy: "stately",
+    retryLimit: 1,
+    expireInSeconds: 1800,
+    retentionMinutes: 180,
+  },
+  "token.catalog": {
+    name: "token.catalog",
+    policy: "stately",
+    retryLimit: 1,
+    expireInSeconds: 1800,
+    retentionMinutes: 180,
+  },
+};
+
 /** Thin typed wrapper over pg-boss with our queue registry baked in. */
 export class Jobs {
   readonly boss: PgBoss;
@@ -33,7 +73,13 @@ export class Jobs {
     if (this.started) return;
     await this.boss.start();
     if (this.ensureQueues) {
-      for (const q of ALL_QUEUES) await this.boss.createQueue(q);
+      for (const q of ALL_QUEUES) {
+        const tuning = QUEUE_TUNING[q];
+        await this.boss.createQueue(q, tuning ?? { name: q });
+        // createQueue is a no-op if the queue already exists, so push the tuning
+        // through explicitly for queues that predate this config.
+        if (tuning) await this.boss.updateQueue(q, tuning);
+      }
     }
     this.started = true;
     log.info({ queues: ALL_QUEUES }, "jobs started");
@@ -45,7 +91,7 @@ export class Jobs {
     this.started = false;
   }
 
-  /** Enqueue one job. `key` (singletonKey) dedupes pending jobs. */
+  /** Enqueue one job. `key` (singletonKey) dedupes live jobs on `stately` queues. */
   async enqueue<N extends QueueName>(
     name: N,
     data: JobPayloads[N],
@@ -66,17 +112,42 @@ export class Jobs {
     );
   }
 
-  /** Register a worker for a queue. */
+  /**
+   * Register `concurrency` independent workers for a queue. pg-boss has no
+   * in-process concurrency knob (a single `work()` polls and runs its batch
+   * serially), so real parallelism = N separate polling workers, each pulling
+   * one job at a time. On `stately` queues pg-boss still guarantees at most one
+   * live job per `singletonKey`, so different keys run in parallel while a
+   * duplicate key waits.
+   */
   async work<N extends QueueName>(
     name: N,
-    opts: PgBoss.WorkOptions,
+    opts: (PgBoss.WorkOptions & { concurrency?: number }) | undefined,
     handler: JobHandler<N>,
-  ): Promise<string> {
-    return this.boss.work<JobPayloads[N]>(name, opts, async (jobs) => {
+  ): Promise<string[]> {
+    const { concurrency = 1, ...workOpts } = opts ?? {};
+    const runOne = async (jobs: PgBoss.Job<JobPayloads[N]>[]): Promise<void> => {
       for (const job of jobs) {
-        await handler(job.data, job);
+        try {
+          await handler(job.data, job);
+        } catch (err) {
+          log.error({ err, queue: name, jobId: job.id }, "job handler threw");
+          throw err; // let pg-boss record the failure + apply the retry policy
+        }
       }
-    });
+    };
+
+    const ids: string[] = [];
+    for (let i = 0; i < Math.max(1, concurrency); i++) {
+      ids.push(
+        await this.boss.work<JobPayloads[N]>(
+          name,
+          { batchSize: 1, pollingIntervalSeconds: 1, ...workOpts },
+          runOne,
+        ),
+      );
+    }
+    return ids;
   }
 
   /** Cron-schedule a recurring job. */

@@ -2,7 +2,13 @@ import { createServer } from "node:http";
 import { baseEnvSchema, defineConfig, loadEnv, z } from "@xrpl-indexer/core/config";
 import { createLogger } from "@xrpl-indexer/core/logger";
 import { closeDb, getDb } from "@xrpl-indexer/db";
-import { createContext, enrichEnvSchema, runDiscovery, toEnrichConfig } from "@xrpl-indexer/enrich";
+import {
+  createContext,
+  enrichEnvSchema,
+  registerWorkers,
+  runDiscovery,
+  toEnrichConfig,
+} from "@xrpl-indexer/enrich";
 import { Jobs } from "@xrpl-indexer/jobs";
 
 loadEnv();
@@ -12,9 +18,9 @@ const config = defineConfig({
   ...baseEnvSchema,
   ...enrichEnvSchema,
   BACKFILLER_METRICS_PORT: z.coerce.number().int().positive().default(9102),
-  DISCOVERY_INTERVAL_MS: z.coerce.number().int().positive().default(60_000),
   ROLLUP_CRON: z.string().default("*/5 * * * *"),
-  DISCOVERY_CRON: z.string().default("*/2 * * * *"),
+  DISCOVERY_CRON: z.string().default("*/5 * * * *"),
+  TOKEN_CATALOG_CRON: z.string().default("0 */6 * * *"),
 });
 
 const once = process.argv.includes("--once");
@@ -32,16 +38,21 @@ if (once) {
   process.exit(0);
 }
 
-// cron-scheduled recurring jobs (workers pick these up)
+// The backfiller both schedules and services the singleton/cron queues, so they
+// run regardless of the worker fleet's WORKER_QUEUES list.
+await registerWorkers(ctx, ["discovery.scan", "stats.rollup", "token.catalog"], {});
+
 await jobs.schedule("stats.rollup", config.ROLLUP_CRON, {});
 await jobs.schedule("discovery.scan", config.DISCOVERY_CRON, {});
-log.info({ rollup: config.ROLLUP_CRON, discovery: config.DISCOVERY_CRON }, "schedules registered");
+await jobs.schedule("token.catalog", config.TOKEN_CATALOG_CRON, {});
+log.info(
+  { rollup: config.ROLLUP_CRON, discovery: config.DISCOVERY_CRON, tokenCatalog: config.TOKEN_CATALOG_CRON },
+  "schedules registered",
+);
 
-// also scan directly on an interval so a fresh DB fills fast without waiting on cron
+// one immediate pass so a fresh DB starts filling without waiting on cron
 await runDiscovery(ctx).catch((err) => log.error({ err }, "initial discovery failed"));
-const timer = setInterval(() => {
-  void runDiscovery(ctx).catch((err) => log.error({ err }, "discovery tick failed"));
-}, config.DISCOVERY_INTERVAL_MS);
+await jobs.enqueue("token.catalog", {}, { key: "token.catalog:boot" }).catch(() => {});
 
 const health = createServer((_req, res) => {
   res.writeHead(200, { "content-type": "application/json" }).end('{"status":"ok"}');
@@ -52,7 +63,6 @@ for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
     void (async () => {
       log.info({ sig }, "shutting down");
-      clearInterval(timer);
       health.close();
       await jobs.stop();
       await closeDb();

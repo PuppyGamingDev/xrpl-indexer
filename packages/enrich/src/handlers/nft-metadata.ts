@@ -23,6 +23,7 @@ export async function handleNftMetadata(
       ipfsGateways: ctx.gateways.ipfsGateways,
       arweaveGateway: ctx.gateways.arweaveGateway,
       rotation: Math.floor(Math.random() * ctx.gateways.ipfsGateways.length),
+      ipfsRpm: ctx.ipfsRpm,
     });
     await ctx.db
       .insert(nftMeta)

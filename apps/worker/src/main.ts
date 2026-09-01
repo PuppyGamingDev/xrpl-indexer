@@ -2,7 +2,13 @@ import { createServer } from "node:http";
 import { baseEnvSchema, defineConfig, loadEnv, z } from "@xrpl-indexer/core/config";
 import { createLogger } from "@xrpl-indexer/core/logger";
 import { closeDb, getDb } from "@xrpl-indexer/db";
-import { createContext, enrichEnvSchema, registerWorkers, toEnrichConfig, type WorkableQueue } from "@xrpl-indexer/enrich";
+import {
+  createContext,
+  enrichEnvSchema,
+  registerWorkers,
+  toEnrichConfig,
+  type WorkableQueue,
+} from "@xrpl-indexer/enrich";
 import { Jobs } from "@xrpl-indexer/jobs";
 
 loadEnv();
@@ -13,9 +19,13 @@ const config = defineConfig({
   ...enrichEnvSchema,
   WORKER_QUEUES: z
     .string()
-    .default("nft.metadata,token.metadata,issuer.metadata")
+    .default("nft.metadata,nft.collection,token.metadata")
     .transform((s) => s.split(",").map((x) => x.trim()).filter(Boolean) as WorkableQueue[]),
-  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(25),
+  /** Default worker count for any queue without a specific override below. */
+  WORKER_CONCURRENCY: z.coerce.number().int().positive().default(8),
+  WORKER_NFT_METADATA_CONCURRENCY: z.coerce.number().int().positive().optional(),
+  WORKER_NFT_COLLECTION_CONCURRENCY: z.coerce.number().int().positive().optional(),
+  WORKER_TOKEN_METADATA_CONCURRENCY: z.coerce.number().int().positive().optional(),
   WORKER_METRICS_PORT: z.coerce.number().int().positive().default(9103),
 });
 
@@ -25,7 +35,12 @@ const jobs = new Jobs({ ensureQueues: false });
 await jobs.start();
 
 const ctx = createContext(db, jobs, toEnrichConfig(config));
-await registerWorkers(ctx, config.WORKER_QUEUES, config.WORKER_CONCURRENCY);
+await registerWorkers(ctx, config.WORKER_QUEUES, {
+  default: config.WORKER_CONCURRENCY,
+  "nft.metadata": config.WORKER_NFT_METADATA_CONCURRENCY,
+  "nft.collection": config.WORKER_NFT_COLLECTION_CONCURRENCY,
+  "token.metadata": config.WORKER_TOKEN_METADATA_CONCURRENCY,
+});
 log.info(
   { queues: config.WORKER_QUEUES, concurrency: config.WORKER_CONCURRENCY, bithomp: Boolean(config.BITHOMP_API_KEY) },
   "worker started",

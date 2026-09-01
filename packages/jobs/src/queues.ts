@@ -4,6 +4,7 @@ export const QUEUE = {
   nftMetadata: "nft.metadata",
   nftCollection: "nft.collection",
   tokenMetadata: "token.metadata",
+  tokenCatalog: "token.catalog",
   issuerMetadata: "issuer.metadata",
   statsRollup: "stats.rollup",
   discoveryScan: "discovery.scan",
@@ -13,8 +14,11 @@ export type QueueName = (typeof QUEUE)[keyof typeof QUEUE];
 
 export interface JobPayloads {
   "nft.metadata": { nftTokenId: string; uri: string | null };
-  "nft.collection": { collectionId: number; issuer: string; taxon: number };
+  /** One job = one whole issuer catalog (all taxa, live + burned) pulled in bulk. */
+  "nft.collection": { issuer: string };
   "token.metadata": { tokenId: number };
+  /** Paginate the entire xrplmeta token list and bulk-upsert token + issuer meta. */
+  "token.catalog": Record<string, never>;
   "issuer.metadata": { accountId: number; address: string };
   "stats.rollup": Record<string, never>;
   "discovery.scan": { kinds?: ("nft" | "token" | "issuer")[] };

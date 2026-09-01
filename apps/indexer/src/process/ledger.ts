@@ -25,6 +25,12 @@ export interface ProcessResult {
 export interface ProcessOptions {
   /** Record every account's native XRP balance history (see config). */
   trackXrpBalances: boolean;
+  /**
+   * "backfill" replays historical ledgers below the live frontier: writes go in
+   * with conflict-do-nothing (never regress delta state) and per-ledger metric
+   * points are skipped, same as snapshot mode. Default "live".
+   */
+  mode?: "live" | "backfill";
 }
 
 /**
@@ -39,8 +45,9 @@ export async function processLedger(
   opts: ProcessOptions,
 ): Promise<ProcessResult> {
   const seq = full.ledgerIndex;
+  const backfill = opts.mode === "backfill";
   const xrpTokenId = await registry.xrpTokenId(seq);
-  const batch = new LedgerBatch(seq, { xrpTokenId });
+  const batch = new LedgerBatch(seq, { xrpTokenId, snapshot: backfill });
 
   for (const tx of full.transactions) {
     if (!txSucceeded(tx)) continue;
@@ -96,17 +103,21 @@ export async function processLedger(
 
     await batch.flush(tx as unknown as Db);
 
-    await tx
-      .insert(indexerCheckpoint)
-      .values({ id: 1, lastLedgerSeq: seq, lastLedgerHash: full.ledgerHash })
-      .onConflictDoUpdate({
-        target: indexerCheckpoint.id,
-        set: {
-          lastLedgerSeq: sql`greatest(${indexerCheckpoint.lastLedgerSeq}, excluded.last_ledger_seq)`,
-          lastLedgerHash: sql`excluded.last_ledger_hash`,
-          updatedAt: sql`now()`,
-        },
-      });
+    // Backfill only fills history below the live frontier — it must never touch
+    // the live-sync checkpoint.
+    if (!backfill) {
+      await tx
+        .insert(indexerCheckpoint)
+        .values({ id: 1, lastLedgerSeq: seq, lastLedgerHash: full.ledgerHash })
+        .onConflictDoUpdate({
+          target: indexerCheckpoint.id,
+          set: {
+            lastLedgerSeq: sql`greatest(${indexerCheckpoint.lastLedgerSeq}, excluded.last_ledger_seq)`,
+            lastLedgerHash: sql`excluded.last_ledger_hash`,
+            updatedAt: sql`now()`,
+          },
+        });
+    }
   });
 
   const result = { ledgerIndex: seq, txnCount: full.transactions.length, touchedTokens: batch.touchedTokens.size };

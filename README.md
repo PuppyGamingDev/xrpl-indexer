@@ -34,8 +34,8 @@ ADMIN_BOOTSTRAP_USER=admin ADMIN_BOOTSTRAP_PASSWORD=<pw> pnpm bootstrap   # mint
 # 2. the services — plain Node processes, NOT started by docker compose
 pnpm --filter @xrpl-indexer/indexer    start   # ledger → Postgres
 pnpm --filter @xrpl-indexer/api        start   # REST API on :4100
-pnpm --filter @xrpl-indexer/backfiller start   # schedules + discovery (one instance)
-WORKER_QUEUES=nft.metadata,token.metadata,issuer.metadata,stats.rollup \
+pnpm --filter @xrpl-indexer/backfiller start   # schedules + discovery + token.catalog + rollup (one instance)
+WORKER_QUEUES=nft.metadata,nft.collection,token.metadata \
   pnpm --filter @xrpl-indexer/worker   start
 ```
 
@@ -61,14 +61,19 @@ pm2 status ; pm2 logs xrpl-indexer
 ```bash
 git pull
 pnpm install                                # picks up dependency changes
+pnpm --filter @xrpl-indexer/db migrate      # apply any new drizzle/*.sql
 pm2 restart ops/pm2/ecosystem.config.cjs --update-env
 ```
 
 Restart just one: `pm2 restart xrpl-indexer`. The indexer is safe to bounce
 anytime — it resumes from `indexer_checkpoint` and auto-catches-up any gap
 (falling back to `XRPL_BACKFILL_ENDPOINTS` if the gap predates your sync node's
-retained window). A one-off historical fill is a separate process:
-`pnpm --filter @xrpl-indexer/indexer backfill`.
+retained window).
+
+The bundled PM2 config also defines **`xrpl-ledger-backfill`** — a dedicated,
+resumable process that walks history *descending* from the first indexed ledger
+down to `INDEXER_BACKFILL_FLOOR` (see **Historical ledger backfill** below). It
+no-ops unless that floor is `> 0`.
 
 ### systemd (alternative)
 
@@ -144,7 +149,7 @@ different nodes:
 | Env var | Used by | Needs full history? |
 | --- | --- | --- |
 | `XRPL_SYNC_ENDPOINTS` | live `ledger` subscription + catch-up | no — a recent-window node (e.g. **your own Clio**) is ideal |
-| `XRPL_BACKFILL_ENDPOINTS` | `--mode=backfill` range/gap fill | **yes** — your own full-history node, or a public one |
+| `XRPL_BACKFILL_ENDPOINTS` | `--mode=backfill` descending history fill + live-sync pruned-gap fallback | **yes** — your own full-history node, or a public one |
 | `XRPL_ENDPOINTS` | fallback for whichever of the above is unset | — |
 
 Typical setup: `XRPL_SYNC_ENDPOINTS` → your Clio, `XRPL_BACKFILL_ENDPOINTS` → a
@@ -184,6 +189,35 @@ live sync which catches up from the checkpoint to current.
 - `pnpm --filter @xrpl-indexer/indexer start -- --mode=snapshot` runs just the
   snapshot and exits.
 
+### Historical ledger backfill
+
+The snapshot fixes *current* state; backfill extends the indexed range *backward*.
+The `xrpl-ledger-backfill` PM2 process (or `--mode=backfill`) walks **descending**
+from the first indexed ledger (`min(ledger.sequence) - 1`) down to
+`INDEXER_BACKFILL_FLOOR` and replays each ledger's transactions into the
+append-only history tables (`token_exchange`, `nft_exchange`, NFT mints/burns,
+offers, historical `account_balance` rows).
+
+- **Off unless `INDEXER_BACKFILL_FLOOR > 0`.** Set it to an explicit ledger index
+  — `32570` for full history, or higher for a window. The dedicated process also
+  needs `INDEXER_BACKFILL_ENABLED=true` (the bundled PM2 app sets this; don't set
+  it on the live `xrpl-indexer`).
+- **Resumable.** Progress is a single `ledger_gap` row whose `range_end` is walked
+  downward as a cursor; a crash + PM2 restart resumes from it. When it reaches the
+  floor the row is marked `done` and the process idles (re-checking for new ranges
+  if you later lower the floor).
+- **Append-only.** Backfilled ledgers do **not** write per-ledger
+  holder/supply/trustline metric points — those chart series stay anchored at the
+  initial snapshot ledger (walking history backward can't reconstruct
+  point-in-time values correctly). It also never touches `indexer_checkpoint`.
+- **Endpoints:** uses `XRPL_BACKFILL_ENDPOINTS`. Against public full-history
+  clusters keep `INDEXER_BACKFILL_CONCURRENCY` at 4–6 (they rate-limit); point it
+  at your own full-history node to go faster.
+- **Historically burned NFTs** (minted *and* burned before the backfill floor) are
+  captured separately by the Bithomp issuer-catalog enrichment path
+  (`nft.collection`), which streams each issuer's whole catalog including deleted
+  NFTs — no genesis-deep ledger replay needed for NFT coverage.
+
 **Per-process footprint** (steady state, once caught up):
 
 | Process | vCPU | RAM | Notes |
@@ -191,8 +225,9 @@ live sync which catches up from the checkpoint to current.
 | Postgres 16 | 2–8 | most of the box | give it the RAM and the fast disk |
 | `apps/indexer` | ~1 | 256–512 MB | ~1 s/ledger measured — keeps up with 3–4 s closes with headroom |
 | `apps/api` | 0.5–2 | 256–512 MB | scales with request volume; in-process cache + rate limiter |
-| `apps/backfiller` | ~0.25 | 128–256 MB | singleton — one instance only (schedules + discovery scans) |
-| `apps/worker` | ~0.25 each | ~256 MB each | run 1–8; **Bithomp / xrpl.to / xrplmeta rate limits are the real cap**, not CPU |
+| `apps/backfiller` | ~0.25 | 128–256 MB | singleton — one instance only (schedules + discovery + `token.catalog` + `stats.rollup`) |
+| `apps/worker` | ~0.25 each | ~256 MB each | fan-out queues; per-queue worker counts via `WORKER_*_CONCURRENCY`; **provider rate limits are the real cap**, not CPU |
+| `xrpl-ledger-backfill` | ~0.5 | 256–512 MB | optional; only when `INDEXER_BACKFILL_FLOOR > 0`. Bounded by `XRPL_BACKFILL_ENDPOINTS` rate limits |
 
 **Not required:** Redis (pg-boss is Postgres-backed), a message broker, object
 storage (no media is ever downloaded), or your own rippled for live-forward use.
@@ -211,9 +246,12 @@ VPSs.
 **Topology**
 
 - `apps/backfiller` — run on exactly **one** host (it owns the cron schedules and
-  the discovery loop). Cheapest to keep it on the indexing box.
+  services the `discovery.scan` / `stats.rollup` / `token.catalog` singleton
+  queues itself). Cheapest to keep it on the indexing box.
 - `apps/worker` — run as many as you like, anywhere, each with its own
-  `WORKER_QUEUES` / `WORKER_CONCURRENCY`.
+  `WORKER_QUEUES` and per-queue `WORKER_*_CONCURRENCY`. Each queue registration
+  spawns N independent pg-boss polling workers (real parallelism), and the
+  fan-out queues use pg-boss `stately` policy so `singletonKey` actually dedupes.
 
 **What a remote worker box needs**
 
@@ -236,10 +274,10 @@ VPSs.
 
 | Queue | Fan out to many boxes? | Why |
 | --- | --- | --- |
-| `nft.metadata` | ✅ yes | hits many different IPFS gateways; no shared limit |
-| `token.metadata` / `issuer.metadata` | ⚠️ a couple | xrpl.to / xrplmeta are lenient but the rate limiter is **per process**, so N boxes = N× request rate |
-| `nft.collection` | ❌ one box only | Bithomp plan limits are per-account; only that box gets `BITHOMP_API_KEY`, set `BITHOMP_REQUESTS_PER_MINUTE` to the plan cap |
-| `stats.rollup` | ➖ doesn't matter | pg-boss delivers each scheduled fire to exactly one worker; just make sure *some* worker lists it |
+| `nft.metadata` | ✅ yes | per-NFT IPFS fallback (long tail); many gateways, `METADATA_IPFS_RPM` caps it per process |
+| `token.metadata` | ⚠️ a couple | xrpl.to / xrplmeta fallback for tokens the bulk `token.catalog` missed; the rate limiter is **per process** |
+| `nft.collection` | ❌ one box only | primary NFT path — bulk per-issuer Bithomp catalog pull; only that box gets `BITHOMP_API_KEY`, set `BITHOMP_REQUESTS_PER_MINUTE` to the plan cap |
+| `token.catalog` / `stats.rollup` / `discovery.scan` | ➖ backfiller only | the singleton box runs these itself; don't add them to any `WORKER_QUEUES` |
 
 **Connection budget:** each worker process opens `DB_POOL_MAX` (default 10)
 Postgres connections plus a few for pg-boss. Keep `Σ(workers) × DB_POOL_MAX`

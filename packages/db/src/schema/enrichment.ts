@@ -109,3 +109,16 @@ export const dashboardSnapshot = pgTable("dashboard_snapshot", {
   ts: timestamp("ts", { withTimezone: true }).primaryKey().defaultNow(),
   stats: jsonb("stats").notNull(),
 });
+
+/**
+ * Marks that a whole-issuer NFT catalog pull (Bithomp `nft.collection`) has run.
+ * Lets discovery gate the expensive per-NFT `nft.metadata` fallback to NFTs
+ * whose issuer was already bulk-pulled and still lacks metadata.
+ */
+export const issuerCatalog = pgTable("issuer_catalog", {
+  issuerId: bigint("issuer_id", { mode: "number" })
+    .primaryKey()
+    .references(() => account.id),
+  pulledAt: timestamp("pulled_at", { withTimezone: true }).notNull().defaultNow(),
+  nftCount: integer("nft_count").notNull().default(0),
+});

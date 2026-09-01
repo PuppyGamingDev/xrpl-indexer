@@ -4,7 +4,7 @@ import { parseNftMetadata } from "../metadata/nft.ts";
 import { throttle, sleep } from "../ratelimit.ts";
 import { safeFetch } from "../safe-fetch.ts";
 import { canonicalizeUri } from "../uri.ts";
-import type { NftCatalogProvider, ProviderNft } from "./types.ts";
+import type { CatalogNft, NftCatalogOptions, NftCatalogProvider } from "./types.ts";
 
 const log = createLogger("sources.bithomp");
 const MAX_429_RETRIES = 2;
@@ -20,7 +20,9 @@ interface BithompNft {
   nftokenID?: string;
   uri?: string;
   metadata?: Record<string, unknown> | null;
-  assets?: Record<string, string> | null;
+  /** Present (with a timestamp) once the NFT has been burned. */
+  deletedAt?: string | number | null;
+  deletedLedgerIndex?: number | null;
 }
 
 export class BithompProvider implements NftCatalogProvider {
@@ -33,15 +35,20 @@ export class BithompProvider implements NftCatalogProvider {
     if (!opts.apiKey) throw new Error("BithompProvider requires an apiKey");
     this.baseUrl = (opts.baseUrl ?? "https://bithomp.com/api/v2").replace(/\/+$/, "");
     this.rpm = opts.requestsPerMinute ?? 300;
-    this.pageLimit = opts.pageLimit ?? 1000;
+    this.pageLimit = Math.min(opts.pageLimit ?? 1000, 1000);
   }
 
-  async *fetchIssuerNfts(issuer: string): AsyncGenerator<ProviderNft> {
+  async *fetchIssuerNfts(issuer: string, opts: NftCatalogOptions = {}): AsyncGenerator<CatalogNft> {
     let offset = 0;
     let total = Infinity;
+    let pages = 0;
 
     while (offset < total) {
-      const page = await this.getPage(issuer, offset);
+      if (++pages > 200) {
+        log.warn({ issuer, offset }, "bithomp issuer catalog exceeded 200 pages; stopping");
+        break;
+      }
+      const page = await this.getPage(issuer, offset, opts.includeBurned ?? false);
       const list = page.nfts ?? [];
       if (page.summary?.totalNfts != null) total = page.summary.totalNfts;
       if (list.length === 0) break;
@@ -58,10 +65,15 @@ export class BithompProvider implements NftCatalogProvider {
   private async getPage(
     issuer: string,
     offset: number,
+    includeBurned: boolean,
   ): Promise<{ nfts?: BithompNft[]; summary?: { totalNfts?: number } }> {
-    const url =
+    // metadata=true returns the parsed metadata JSON inline; we deliberately do
+    // NOT pass assets=true — image/media links come from the NFT's own metadata
+    // (canonical ipfs://, ar://, https://), never a Bithomp CDN URL.
+    let url =
       `${this.baseUrl}/nfts?issuer=${encodeURIComponent(issuer)}` +
-      `&limit=${this.pageLimit}&offset=${offset}&assets=true&metadata=true`;
+      `&limit=${this.pageLimit}&offset=${offset}&metadata=true`;
+    if (includeBurned) url += "&deleted=true";
 
     for (let attempt = 0; ; attempt++) {
       await throttle("bithomp", this.rpm);
@@ -85,21 +97,15 @@ export class BithompProvider implements NftCatalogProvider {
   }
 }
 
-function mapNft(raw: BithompNft): ProviderNft | null {
+function mapNft(raw: BithompNft): CatalogNft | null {
   const id = raw.nftokenID?.toUpperCase();
   if (!id) return null;
 
   const meta = parseNftMetadata(raw.metadata ?? {});
-  const assets = raw.assets ?? {};
-
-  const imageUri =
-    meta.imageUri ??
-    (assets.image ? canonicalizeUri(assets.image) : null) ??
-    (raw.uri ? canonicalizeUri(raw.uri) : null);
-  const mediaUri =
-    meta.mediaUri ??
-    (assets.video ? canonicalizeUri(assets.video) : null) ??
-    (assets.animation ? canonicalizeUri(assets.animation) : null);
+  const uri = raw.uri ? canonicalizeUri(raw.uri) : null;
+  const imageUri = meta.imageUri ?? uri;
+  const mediaUri = meta.mediaUri ?? null;
+  const burned = raw.deletedAt != null || raw.deletedLedgerIndex != null;
 
   return {
     nftTokenId: id,
@@ -110,6 +116,9 @@ function mapNft(raw: BithompNft): ProviderNft | null {
     mediaType: classifyMediaType(mediaUri ?? imageUri ?? undefined),
     attributes: meta.attributes,
     collectionName: meta.collectionName,
+    uri,
+    burned,
+    burnLedger: typeof raw.deletedLedgerIndex === "number" ? raw.deletedLedgerIndex : null,
   };
 }
 

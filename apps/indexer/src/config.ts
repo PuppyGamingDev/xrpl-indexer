@@ -57,10 +57,23 @@ export const config = defineConfig({
     .string()
     .default("true")
     .transform((s) => s !== "false" && s !== "0"),
+  /**
+   * Lowest ledger index historical backfill fills down to (descending from the
+   * first indexed ledger). 0 = backfill disabled. This is an explicit ledger
+   * index — set it to genesis (32570) for full history, or higher for a window.
+   */
   INDEXER_BACKFILL_FLOOR: z.coerce.number().int().nonnegative().default(0),
+  /**
+   * Guard so only the dedicated `--mode=backfill` process runs the backfiller.
+   * `runBackfill` no-ops unless this is true (the PM2 app sets it).
+   */
+  INDEXER_BACKFILL_ENABLED: z
+    .string()
+    .default("false")
+    .transform((s) => s === "true" || s === "1"),
   INDEXER_METRICS_PORT: z.coerce.number().int().positive().default(9101),
-  /** Max ledgers to fetch concurrently during backfill. */
-  INDEXER_BACKFILL_CONCURRENCY: z.coerce.number().int().positive().default(4),
+  /** Max ledgers to fetch concurrently during backfill (keep modest for public clusters). */
+  INDEXER_BACKFILL_CONCURRENCY: z.coerce.number().int().positive().default(6),
 });
 
 export type IndexerConfig = typeof config;

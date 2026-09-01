@@ -17,9 +17,15 @@ async function main(): Promise<void> {
   log.info({ mode, metricsPort: config.INDEXER_METRICS_PORT }, "starting");
 
   if (mode === "backfill") {
-    await runBackfill(db);
-    stopMetrics();
-    await closeDb();
+    const shutdownBackfill = async (sig: string) => {
+      log.info({ sig }, "shutting down backfill");
+      stopMetrics();
+      await closeDb();
+      process.exit(0);
+    };
+    process.on("SIGINT", () => void shutdownBackfill("SIGINT"));
+    process.on("SIGTERM", () => void shutdownBackfill("SIGTERM"));
+    await runBackfill(db); // long-running: walks ledger_gap, then idles
     return;
   }
 
