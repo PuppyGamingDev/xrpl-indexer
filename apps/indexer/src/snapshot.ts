@@ -293,33 +293,38 @@ async function dispatch(
 
 /** One bulk holders/trustlines/supply point per token at the snapshot ledger. */
 async function recomputeAllMetrics(db: Db, seq: number): Promise<void> {
-  const base = sql`
-    with latest as (
-      select distinct on (account_id, token_id) token_id, balance
-      from account_balance
-      order by account_id, token_id, ledger_seq desc
-    ),
-    agg as (
+  // Full distinct-on sort over the whole account_balance table blows the 30s
+  // connection statement_timeout — run it once into a temp table with the
+  // timeout lifted, then the three cheap aggregations read from that.
+  await db.transaction(async (tx) => {
+    await tx.execute(sql`set local statement_timeout = 0`);
+    await tx.execute(sql`
+      create temporary table _snap_agg on commit drop as
+      with latest as (
+        select distinct on (account_id, token_id) token_id, balance
+        from account_balance
+        order by account_id, token_id, ledger_seq desc
+      )
       select token_id,
         count(*) filter (where balance <> 0) as trustlines,
         count(*) filter (where balance > 0)  as holders,
         coalesce(sum(balance) filter (where balance > 0), 0) as supply
-      from latest group by token_id
-    )`;
-  const xrp = sql`(select id from token where token_type = 'XRP' limit 1)`;
+      from latest group by token_id`);
 
-  await db.execute(sql`${base}
-    insert into token_holders (token_id, ledger_seq, value)
-    select token_id, ${seq}, holders from agg where token_id <> ${xrp}
-    on conflict (token_id, ledger_seq) do update set value = excluded.value`);
-  await db.execute(sql`${base}
-    insert into token_trustlines (token_id, ledger_seq, value)
-    select token_id, ${seq}, trustlines from agg where token_id <> ${xrp}
-    on conflict (token_id, ledger_seq) do update set value = excluded.value`);
-  await db.execute(sql`${base}
-    insert into token_supply (token_id, ledger_seq, value)
-    select token_id, ${seq}, supply from agg where token_id <> ${xrp}
-    on conflict (token_id, ledger_seq) do update set value = excluded.value`);
+    const xrp = sql`(select id from token where token_type = 'XRP' limit 1)`;
+    await tx.execute(sql`
+      insert into token_holders (token_id, ledger_seq, value)
+      select token_id, ${seq}, holders from _snap_agg where token_id <> ${xrp}
+      on conflict (token_id, ledger_seq) do update set value = excluded.value`);
+    await tx.execute(sql`
+      insert into token_trustlines (token_id, ledger_seq, value)
+      select token_id, ${seq}, trustlines from _snap_agg where token_id <> ${xrp}
+      on conflict (token_id, ledger_seq) do update set value = excluded.value`);
+    await tx.execute(sql`
+      insert into token_supply (token_id, ledger_seq, value)
+      select token_id, ${seq}, supply from _snap_agg where token_id <> ${xrp}
+      on conflict (token_id, ledger_seq) do update set value = excluded.value`);
+  });
   log.info("snapshot metric recompute complete");
 }
 
