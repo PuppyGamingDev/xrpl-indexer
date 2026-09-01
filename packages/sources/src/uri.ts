@@ -12,6 +12,7 @@ export interface GatewayConfig {
  * through untouched.
  */
 export function canonicalizeUri(raw: string): string {
+  if (typeof raw !== "string") return "";
   const uri = raw.trim();
   if (!uri) return uri;
 

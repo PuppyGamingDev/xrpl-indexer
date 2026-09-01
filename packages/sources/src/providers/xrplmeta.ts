@@ -119,6 +119,17 @@ export class XrplMetaProvider implements TokenInfoProvider, TokenCatalogProvider
   }
 }
 
+/** xrplmeta metadata fields are loosely typed — coerce anything non-string to null. */
+function s(v: unknown): string | null {
+  return typeof v === "string" && v.trim() ? v.trim() : null;
+}
+function canon(v: unknown): string | null {
+  const str = s(v);
+  if (!str) return null;
+  const c = canonicalizeUri(str);
+  return c || null;
+}
+
 function toProviderToken(
   currency: string,
   issuer: string,
@@ -126,36 +137,43 @@ function toProviderToken(
 ): ProviderToken {
   const tk = meta.token ?? {};
   const iss = meta.issuer ?? {};
-  const icon = tk.icon ?? iss.icon ?? null;
   return {
     currency,
     issuer,
-    name: tk.name ?? iss.name ?? null,
-    description: tk.description ?? tk.desc ?? iss.description ?? null,
-    iconUri: icon ? canonicalizeUri(icon) : null,
-    domain: iss.domain ?? null,
-    trustLevel: tk.trust_level ?? (iss.kyc || iss.trusted ? 2 : 0),
+    name: s(tk.name) ?? s(iss.name),
+    description: s(tk.description) ?? s(tk.desc) ?? s(iss.description),
+    iconUri: canon(tk.icon) ?? canon(iss.icon),
+    domain: s(iss.domain),
+    trustLevel: typeof tk.trust_level === "number" ? tk.trust_level : iss.kyc || iss.trusted ? 2 : 0,
     links: linksFrom(tk.urls ?? tk.weblinks),
     raw: { meta },
   };
 }
 
 function toProviderIssuer(address: string, iss?: XrplMetaIssuerMeta): ProviderIssuer | null {
-  if (!iss || (!iss.name && !iss.domain && !iss.twitter && !iss.icon)) return null;
+  if (!iss) return null;
+  const name = s(iss.name);
+  const domain = s(iss.domain);
+  const twitter = s(iss.twitter);
+  const iconUri = canon(iss.icon);
+  if (!name && !domain && !twitter && !iconUri) return null;
   return {
     address,
-    name: iss.name ?? null,
-    description: iss.description ?? null,
-    iconUri: iss.icon ? canonicalizeUri(iss.icon) : null,
-    twitter: iss.twitter ?? null,
-    domain: iss.domain ?? null,
+    name,
+    description: s(iss.description),
+    iconUri,
+    twitter,
+    domain,
     verified: Boolean(iss.kyc || iss.trusted),
   };
 }
 
-function linksFrom(weblinks?: { url: string; type?: string }[]): Record<string, string> | null {
-  if (!weblinks?.length) return null;
+function linksFrom(weblinks?: unknown): Record<string, string> | null {
+  if (!Array.isArray(weblinks) || weblinks.length === 0) return null;
   const out: Record<string, string> = {};
-  for (const w of weblinks) if (w.url) out[w.type ?? "website"] = w.url;
+  for (const w of weblinks) {
+    const url = s((w as { url?: unknown })?.url);
+    if (url) out[s((w as { type?: unknown })?.type) ?? "website"] = url;
+  }
   return Object.keys(out).length ? out : null;
 }
