@@ -277,6 +277,24 @@ pm2 save && pm2 startup                      # survive reboots
 pm2 status ; pm2 logs
 ```
 
+`pm2 start ops/pm2/ecosystem.config.cjs` brings up **five** processes:
+
+| PM2 name | App | Role | Count | Runs only if |
+| --- | --- | --- | --- | --- |
+| `xrpl-indexer` | `apps/indexer` | **live** ledger subscription + catch-up + initial snapshot | 1 | always |
+| `xrpl-api` | `apps/api` | REST API on `API_PORT` | 1+ | always |
+| `xrpl-backfiller` | `apps/backfiller` | **enrichment orchestrator** — owns the pg-boss cron schedules (`token.catalog`, `stats.rollup`, `discovery.scan`) and the work-discovery scans that enqueue metadata jobs. *Nothing to do with ledger history.* | **exactly 1** | always |
+| `xrpl-worker` | `apps/worker` | executes the metadata jobs the backfiller enqueues (`nft.metadata`, `nft.collection`, `token.metadata`) | 1+ (scale out) | always |
+| `xrpl-ledger-backfill` | `apps/indexer --mode=backfill` | **ledger history** — walks *descending* from the oldest indexed ledger down to `INDEXER_BACKFILL_FLOOR`, replaying transactions into the append-only history tables. Its own resumable process, metrics on `:9104`. | 0–1 | `INDEXER_BACKFILL_FLOOR > 0` (else it idles) |
+
+> **`xrpl-backfiller` vs `xrpl-ledger-backfill`** — confusingly similar names, unrelated jobs.
+> `xrpl-backfiller` = token/NFT **metadata** enrichment scheduling. `xrpl-ledger-backfill` =
+> replaying **historical ledgers**. You want `xrpl-backfiller` running always; you want
+> `xrpl-ledger-backfill` only while you're filling in chain history.
+
+Postgres + pgweb stay in Docker (`docker compose up -d`). That's the whole
+runtime: 5 PM2 processes + 2 containers.
+
 **Redeploy after `git pull`:**
 
 ```bash
@@ -289,12 +307,7 @@ pm2 restart ops/pm2/ecosystem.config.cjs --update-env
 Restart just one: `pm2 restart xrpl-api`. The indexer is safe to bounce anytime —
 it resumes from `indexer_checkpoint` and auto-catches-up any gap (falling back to
 `XRPL_BACKFILL_ENDPOINTS` if the gap predates your sync node's retained window).
-
-The bundled config also defines **`xrpl-ledger-backfill`** — a dedicated,
-resumable process that walks history *descending* from the first indexed ledger
-down to `INDEXER_BACKFILL_FLOOR` (see
-[Historical ledger backfill](#historical-ledger-backfill)). It no-ops unless that
-floor is `> 0`.
+See [Historical ledger backfill](#historical-ledger-backfill) for `xrpl-ledger-backfill`.
 
 ### systemd (alternative)
 
