@@ -13,23 +13,52 @@ export async function runRollup(ctx: EnrichContext): Promise<void> {
     await db.execute(sql`set local statement_timeout = 0`);
     await db.execute(sql`set local max_parallel_workers_per_gather = 0`);
 
-    // token_stats: latest metric points + 24h/7d trade aggregates
+    // token_stats — most of the ~1.75M IOU tokens are dead spam trustline pairs.
+    // Take the latest metric point per token in one index pass each, then only
+    // recompute stats for tokens that currently have holders/trustlines, have
+    // metadata, or traded recently.
     await db.execute(sql`
+      with lh as (select distinct on (token_id) token_id, value from token_holders    order by token_id, ledger_seq desc),
+           lt as (select distinct on (token_id) token_id, value from token_trustlines order by token_id, ledger_seq desc),
+           ls as (select distinct on (token_id) token_id, value from token_supply     order by token_id, ledger_seq desc),
+           lm as (select distinct on (token_id) token_id, value from token_marketcap  order by token_id, ledger_seq desc),
+           recent as (
+             select taker_got_token_id as token_id from token_exchange
+               where ledger_seq > (select coalesce(max(sequence),0) - 2000000 from ledger)
+             union
+             select taker_paid_token_id from token_exchange
+               where ledger_seq > (select coalesce(max(sequence),0) - 2000000 from ledger)
+           ),
+           cand as (
+             select t.id
+             from token t
+             left join lh on lh.token_id = t.id
+             left join lt on lt.token_id = t.id
+             where t.token_type <> 'XRP'
+               and ( coalesce(lh.value,0) > 0
+                  or coalesce(lt.value,0) > 0
+                  or exists (select 1 from token_meta m where m.token_id = t.id and m.error is null)
+                  or t.id in (select token_id from recent) )
+           )
       insert into token_stats (token_id, holders, trustlines, supply, marketcap, price,
                                volume_24h, volume_7d, exchanges_24h, exchanges_7d,
                                takers_24h, takers_7d, computed_at)
       select
-        t.id,
-        coalesce((select value::numeric from token_holders    where token_id=t.id order by ledger_seq desc limit 1),0)::int,
-        coalesce((select value::numeric from token_trustlines where token_id=t.id order by ledger_seq desc limit 1),0)::int,
-        coalesce((select value from token_supply    where token_id=t.id order by ledger_seq desc limit 1),0),
-        coalesce((select value from token_marketcap where token_id=t.id order by ledger_seq desc limit 1),0),
+        c.id,
+        coalesce(lh.value,0)::int,
+        coalesce(lt.value,0)::int,
+        coalesce(ls.value,0),
+        coalesce(lm.value,0),
         0,
         coalesce(v.vol_24h,0), coalesce(v.vol_7d,0),
         coalesce(v.ex_24h,0), coalesce(v.ex_7d,0),
         coalesce(v.tk_24h,0), coalesce(v.tk_7d,0),
         now()
-      from token t
+      from cand c
+      left join lh on lh.token_id = c.id
+      left join lt on lt.token_id = c.id
+      left join ls on ls.token_id = c.id
+      left join lm on lm.token_id = c.id
       left join lateral (
         select
           sum(case when l.close_time > now() - interval '24 hours' then te.taker_got_value else 0 end) as vol_24h,
@@ -39,10 +68,9 @@ export async function runRollup(ctx: EnrichContext): Promise<void> {
           count(distinct te.taker_id) filter (where l.close_time > now() - interval '24 hours') as tk_24h,
           count(distinct te.taker_id) filter (where l.close_time > now() - interval '7 days')  as tk_7d
         from token_exchange te join ledger l on l.sequence = te.ledger_seq
-        where (te.taker_got_token_id = t.id or te.taker_paid_token_id = t.id)
+        where (te.taker_got_token_id = c.id or te.taker_paid_token_id = c.id)
           and l.close_time > now() - interval '7 days'
       ) v on true
-      where t.token_type <> 'XRP'
       on conflict (token_id) do update set
         holders = excluded.holders, trustlines = excluded.trustlines, supply = excluded.supply,
         marketcap = excluded.marketcap, volume_24h = excluded.volume_24h, volume_7d = excluded.volume_7d,
@@ -50,21 +78,18 @@ export async function runRollup(ctx: EnrichContext): Promise<void> {
         takers_24h = excluded.takers_24h, takers_7d = excluded.takers_7d, computed_at = now()
     `);
 
-    // nft_collection_stats: supply/holders/floor/volume from base tables
+    // nft_collection_stats — one grouped pass over nft + one over nft_exchange,
+    // not a correlated lateral per collection.
     await db.execute(sql`
-      insert into nft_collection_stats (collection_id, supply, holders, floor, volume_24h, volume_7d, volume_all,
-                                        trades_24h, trades_7d, computed_at)
-      select
-        c.id,
-        (select count(*) from nft n where n.collection_id=c.id and n.live),
-        (select count(distinct owner_id) from nft n where n.collection_id=c.id and n.live),
-        0,
-        coalesce(x.v24,0), coalesce(x.v7,0), coalesce(x.vall,0),
-        coalesce(x.t24,0), coalesce(x.t7,0),
-        now()
-      from nft_collection c
-      left join lateral (
-        select
+      with sup as (
+        select collection_id,
+               count(*) filter (where live) as supply,
+               count(distinct owner_id) filter (where live) as holders
+        from nft where collection_id is not null
+        group by collection_id
+      ),
+      vol as (
+        select n.collection_id,
           sum(case when l.close_time > now() - interval '24 hours' and (nx.amount->>'value') ~ '^[0-9.]+$'
                    then (nx.amount->>'value')::numeric else 0 end) as v24,
           sum(case when l.close_time > now() - interval '7 days' and (nx.amount->>'value') ~ '^[0-9.]+$'
@@ -75,8 +100,18 @@ export async function runRollup(ctx: EnrichContext): Promise<void> {
         from nft_exchange nx
         join nft n on n.token_id = nx.nft_token_id
         join ledger l on l.sequence = nx.ledger_seq
-        where n.collection_id = c.id
-      ) x on true
+        where n.collection_id is not null
+        group by n.collection_id
+      )
+      insert into nft_collection_stats (collection_id, supply, holders, floor, volume_24h, volume_7d, volume_all,
+                                        trades_24h, trades_7d, computed_at)
+      select c.id,
+        coalesce(sup.supply,0), coalesce(sup.holders,0), 0,
+        coalesce(vol.v24,0), coalesce(vol.v7,0), coalesce(vol.vall,0),
+        coalesce(vol.t24,0), coalesce(vol.t7,0), now()
+      from nft_collection c
+      left join sup on sup.collection_id = c.id
+      left join vol on vol.collection_id = c.id
       on conflict (collection_id) do update set
         supply = excluded.supply, holders = excluded.holders,
         volume_24h = excluded.volume_24h, volume_7d = excluded.volume_7d, volume_all = excluded.volume_all,
