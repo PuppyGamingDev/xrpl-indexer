@@ -10,64 +10,56 @@ export async function runRollup(ctx: EnrichContext): Promise<void> {
   await ctx.db.transaction(async (db) => {
     // Batch job over growing history tables — raise the 30s web timeout, but
     // keep it bounded so a bad plan aborts instead of running for 30 min. Skip
-    // parallel workers (DSM pressure in the container's /dev/shm).
-    await db.execute(sql`set local statement_timeout = '900s'`);
+    // parallel workers (DSM pressure in the container's /dev/shm), and give
+    // hashes/sorts enough memory to stay off disk.
+    await db.execute(sql`set local statement_timeout = '600s'`);
     await db.execute(sql`set local max_parallel_workers_per_gather = 0`);
+    await db.execute(sql`set local work_mem = '256MB'`);
 
     // token_stats — most of the ~1.75M IOU tokens are dead spam trustline pairs.
     // Take the latest metric point per token in one index pass each, then only
     // recompute stats for tokens that currently have holders/trustlines, have
     // metadata, or traded recently.
+    // Candidate set first, from the two metric tables + metadata only (no
+    // token_exchange scan). Then pull supply/marketcap/volume for just those.
     await db.execute(sql`
       with lh as (select distinct on (token_id) token_id, value from token_holders    order by token_id, ledger_seq desc),
            lt as (select distinct on (token_id) token_id, value from token_trustlines order by token_id, ledger_seq desc),
-           ls as (select distinct on (token_id) token_id, value from token_supply     order by token_id, ledger_seq desc),
-           lm as (select distinct on (token_id) token_id, value from token_marketcap  order by token_id, ledger_seq desc),
-           recent as (
-             select taker_got_token_id as token_id from token_exchange
-               where ledger_seq > (select coalesce(max(sequence),0) - 2000000 from ledger)
-             union
-             select taker_paid_token_id from token_exchange
-               where ledger_seq > (select coalesce(max(sequence),0) - 2000000 from ledger)
-           ),
            cand as (
-             select t.id
+             select t.id,
+                    coalesce(lh.value, 0) as holders,
+                    coalesce(lt.value, 0) as trustlines
              from token t
              left join lh on lh.token_id = t.id
              left join lt on lt.token_id = t.id
              where t.token_type <> 'XRP'
                and ( coalesce(lh.value,0) > 0
                   or coalesce(lt.value,0) > 0
-                  or exists (select 1 from token_meta m where m.token_id = t.id and m.error is null)
-                  or t.id in (select token_id from recent) )
+                  or exists (select 1 from token_meta m where m.token_id = t.id and m.error is null) )
            )
       insert into token_stats (token_id, holders, trustlines, supply, marketcap, price,
                                volume_24h, volume_7d, exchanges_24h, exchanges_7d,
                                takers_24h, takers_7d, computed_at)
       select
         c.id,
-        coalesce(lh.value,0)::int,
-        coalesce(lt.value,0)::int,
-        coalesce(ls.value,0),
-        coalesce(lm.value,0),
+        c.holders::int,
+        c.trustlines::int,
+        coalesce((select value from token_supply    where token_id=c.id order by ledger_seq desc limit 1),0),
+        coalesce((select value from token_marketcap where token_id=c.id order by ledger_seq desc limit 1),0),
         0,
         coalesce(v.vol_24h,0), coalesce(v.vol_7d,0),
         coalesce(v.ex_24h,0), coalesce(v.ex_7d,0),
         coalesce(v.tk_24h,0), coalesce(v.tk_7d,0),
         now()
       from cand c
-      left join lh on lh.token_id = c.id
-      left join lt on lt.token_id = c.id
-      left join ls on ls.token_id = c.id
-      left join lm on lm.token_id = c.id
       left join lateral (
         select
           sum(case when l.close_time > now() - interval '24 hours' then te.taker_got_value else 0 end) as vol_24h,
-          sum(case when l.close_time > now() - interval '7 days'  then te.taker_got_value else 0 end) as vol_7d,
+          sum(te.taker_got_value) as vol_7d,
           count(*) filter (where l.close_time > now() - interval '24 hours') as ex_24h,
-          count(*) filter (where l.close_time > now() - interval '7 days')  as ex_7d,
+          count(*) as ex_7d,
           count(distinct te.taker_id) filter (where l.close_time > now() - interval '24 hours') as tk_24h,
-          count(distinct te.taker_id) filter (where l.close_time > now() - interval '7 days')  as tk_7d
+          count(distinct te.taker_id) as tk_7d
         from token_exchange te join ledger l on l.sequence = te.ledger_seq
         where (te.taker_got_token_id = c.id or te.taker_paid_token_id = c.id)
           and l.close_time > now() - interval '7 days'
