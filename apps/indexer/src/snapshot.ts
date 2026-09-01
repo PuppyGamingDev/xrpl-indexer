@@ -301,9 +301,9 @@ async function recomputeAllMetrics(db: Db, seq: number): Promise<void> {
     ),
     agg as (
       select token_id,
-        count(*) filter (where balance <> 0)::text as trustlines,
-        count(*) filter (where balance > 0)::text  as holders,
-        coalesce(sum(balance) filter (where balance > 0), 0)::text as supply
+        count(*) filter (where balance <> 0) as trustlines,
+        count(*) filter (where balance > 0)  as holders,
+        coalesce(sum(balance) filter (where balance > 0), 0) as supply
       from latest group by token_id
     )`;
   const xrp = sql`(select id from token where token_type = 'XRP' limit 1)`;
