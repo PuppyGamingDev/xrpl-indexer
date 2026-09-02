@@ -3,6 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
+  "description": "Self-hosted XRP Ledger indexer, REST API, enricher, and dashboard",
+  "author": "Puppy Tools Ltd",
+  "homepage": "https://puppy.tools",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/PuppyGamingDev/xrpl-indexer.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PuppyGamingDev/xrpl-indexer/issues",
+    "email": "shiffed@puppy.tools"
+  },
   "type": "module",
   "packageManager": "pnpm@11.24.0",
   "engines": {

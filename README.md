@@ -202,10 +202,11 @@ documented inline there. Copy it to `.env` and work through it. The groups:
 | Dashboard | `XRPL_API_BASE_URL`, `XRPL_API_KEY`, `XRPL_API_ADMIN_KEY`, `AUTH_SECRET`, `IPFS_GATEWAY`, `AR_GATEWAY`, `ADMIN_BOOTSTRAP_*` |
 
 **Minimum to get a useful local index:** set `DATABASE_URL` (matches the compose
-file out of the box) and leave `XRPL_ENDPOINTS` on the public defaults. Everything
-else has a sane default. Add `BITHOMP_API_KEY` when you want NFT collection
-enrichment; point the endpoint variables at your own node before attempting a
-large historical backfill.
+file out of the box), replace the `AUTH_SECRET` placeholder with a real value —
+`openssl rand -base64 32` — and leave `XRPL_ENDPOINTS` on the public defaults.
+Everything else has a sane default. Add `BITHOMP_API_KEY` when you want NFT
+collection enrichment; point the endpoint variables at your own node before
+attempting a large historical backfill.
 
 ---
 
